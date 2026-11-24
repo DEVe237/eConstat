@@ -35,3 +35,10 @@ final historiqueProvider = FutureProvider<List<Map<String, dynamic>>>((ref) asyn
   if (id == null) return const [];
   return ref.watch(dossiersRepositoryProvider).listerDossiers();
 });
+
+/// Détail complet d'un dossier, relu à chaque ouverture : les liens des photos
+/// expirent et l'agent peut avoir rendu sa décision entre-temps.
+final dossierDetailProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, id) {
+  ref.watch(authNotifierProvider.select((u) => u.value?.id));
+  return ref.watch(dossiersRepositoryProvider).detail(id);
+});

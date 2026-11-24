@@ -59,7 +59,7 @@ export class DossiersService {
   findAll(user: JwtPayload): Promise<DossierConstat[]> {
     return this.dossiersRepo.find({
       where: { proprietaireId: user.sub },
-      order: { dateCreation: 'DESC' },
+      order: { dateCreation: 'DESC', vehiculesImpliques: { dateAjout: 'ASC' } },
       relations: ['vehiculesImpliques'],
     });
   }
@@ -68,6 +68,8 @@ export class DossiersService {
     const dossier = await this.dossiersRepo.findOne({
       where: { id },
       relations: ['vehiculesImpliques', 'medias', 'signatures'],
+      // Le premier véhicule est A, le second B.
+      order: { vehiculesImpliques: { dateAjout: 'ASC' }, medias: { horodatage: 'ASC' } },
     });
     // 404 plutôt que 403 : on ne révèle pas l'existence d'un dossier qui n'est pas le sien.
     if (!dossier || !DossiersService.peutLire(dossier, user)) throw new NotFoundException(`Dossier ${id} introuvable`);

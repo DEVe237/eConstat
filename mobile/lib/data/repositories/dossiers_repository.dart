@@ -121,6 +121,11 @@ class DossiersRepository {
     return List<Map<String, dynamic>>.from(reponse.data as List);
   }
 
+  Future<Map<String, dynamic>> detail(String dossierId) async {
+    final reponse = await _api.dio.get('/dossiers/$dossierId');
+    return Map<String, dynamic>.from(reponse.data as Map);
+  }
+
   Future<String> _creerDossier(ConstatDraft draft) async {
     final reponse = await _api.dio.post('/dossiers', data: _circonstances(draft));
     return (reponse.data as Map<String, dynamic>)['id'] as String;
