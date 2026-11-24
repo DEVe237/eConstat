@@ -8,6 +8,8 @@ export interface VehiculeAnalyse {
   plaque: string;
   marque: string;
   couleur: string;
+  /** Absent des analyses antérieures à la reconstitution enrichie. */
+  typeVehicule?: 'voiture' | 'moto' | 'camion' | 'bus' | 'inconnu';
   zoneChoc: 'avant' | 'arriere' | 'flanc_gauche' | 'flanc_droit' | 'inconnue';
   degats: string;
   gravite: 'legere' | 'moyenne' | 'importante' | 'inconnue';
@@ -56,6 +58,10 @@ export class AnalyseIA {
 
   @Column({ type: 'smallint', default: 0 })
   photosAnalysees: number;
+
+  /** Images tirées de la vidéo du tour. */
+  @Column({ type: 'smallint', default: 0 })
+  imagesVideo: number;
 
   @Column({ type: 'text', nullable: true })
   erreur: string | null;

@@ -124,7 +124,7 @@ export class ExportPdfService {
           <tr><th>Route / météo apparentes</th><td>${esc(lib(ia.typeRoute))} · ${esc(lib(ia.conditionsMeteo))}</td></tr>
           ${ia.vehicules.map((v) => `<tr><th>Véhicule ${v.conducteur}</th><td>${esc(v.plaque || 'plaque illisible')} · ${esc(v.marque)} ${esc(v.couleur)} · choc ${esc(lib(v.zoneChoc))} · ${esc(v.degats)} (gravité ${esc(v.gravite)})</td></tr>`).join('')}
           <tr><th>Résumé</th><td>${esc(ia.resume)}</td></tr>
-          <tr><th>Confiance</th><td>${Math.round(ia.confiance * 100)} % — ${d.analyseIA!.photosAnalysees} photo(s), modèle ${esc(d.analyseIA!.modele)}</td></tr>
+          <tr><th>Confiance</th><td>${Math.round(ia.confiance * 100)} % — ${d.analyseIA!.photosAnalysees} photo(s)${d.analyseIA!.imagesVideo ? ` et ${d.analyseIA!.imagesVideo} image(s) de la vidéo du tour` : ''}, modèle ${esc(d.analyseIA!.modele)}</td></tr>
         </table><p class="muted">Analyse automatique indicative, sans valeur probante : elle ne se substitue ni aux déclarations ni à la conclusion de l'agent.</p>`
       : '<span class="muted">Aucune analyse IA disponible.</span>';
     const videos = d.medias.filter((m) => m.type === 'video').length;

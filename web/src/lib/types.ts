@@ -54,6 +54,7 @@ export interface AnalyseIA {
   statut: 'terminee' | 'echouee' | 'indisponible';
   modele: string | null;
   photosAnalysees: number;
+  imagesVideo: number;
   erreur: string | null;
   dateCreation: string;
   resultat: {

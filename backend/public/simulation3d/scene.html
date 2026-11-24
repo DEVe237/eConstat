@@ -52,10 +52,15 @@
       const container = document.getElementById('app');
       window.seekTo = initScene(container, scene);
       window.__sceneReady = true;
-      if (scene.sourceTrajectoire === 'ia' && scene.analyseIA) {
+      if (scene.analyseIA) {
         const badge = document.getElementById('source');
-        badge.textContent = `Angle d'impact estimé par l'IA : ${scene.analyseIA.angleImpactDeg}°`;
-        badge.style.display = 'block';
+        const apports = [];
+        if (scene.sourceTrajectoire === 'ia') apports.push(`angle ${scene.analyseIA.angleImpactDeg}°`);
+        if (scene.vehicules.some((v) => v.couleur)) apports.push('couleurs');
+        if (scene.vehicules.some((v) => v.gravite)) apports.push('dégâts');
+        if (scene.routeSource === 'ia') apports.push('route');
+        badge.textContent = `D'après l'analyse IA des images : ${apports.join(', ')}`;
+        if (apports.length) badge.style.display = 'block';
       }
       // Lecture en boucle à la demande (?lecture=auto, dashboard). La WebView
       // mobile pilote seekTo avec son curseur, et le worker headless image par

@@ -83,7 +83,7 @@ function CarteAnalyseIA({ a, autorite, enCours, onLancer }: { a: AnalyseIA | nul
             <div className="mb-1 flex justify-between text-xs text-zinc-500"><span>Confiance</span><span>{Math.round(r.confiance * 100)} %</span></div>
             <div className="h-1.5 rounded-full bg-zinc-100"><div className="h-1.5 rounded-full bg-brand-600" style={{ width: `${Math.round(r.confiance * 100)}%` }} /></div>
           </div>
-          <p className="text-xs text-zinc-500">{a!.photosAnalysees} photo(s) · {dateHeure(a!.dateCreation)} · indicatif, sans valeur probante.</p>
+          <p className="text-xs text-zinc-500">{a!.photosAnalysees} photo(s){a!.imagesVideo ? ` + ${a!.imagesVideo} images de la vidéo` : ''} · {dateHeure(a!.dateCreation)} · indicatif, sans valeur probante.</p>
         </div>
       )}
     </Carte>

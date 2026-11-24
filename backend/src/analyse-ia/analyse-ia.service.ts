@@ -6,6 +6,7 @@ import { existsSync, readFileSync, statSync } from 'fs';
 import { extname, join, normalize, sep } from 'path';
 import { In, Repository } from 'typeorm';
 import type { JwtPayload } from '../auth/jwt.strategy';
+import { extraireImages } from '../common/images-video';
 import { DossiersService } from '../dossiers/dossiers.service';
 import { DossierConstat } from '../dossiers/entities/dossier-constat.entity';
 import { Media } from '../dossiers/entities/media.entity';
@@ -15,6 +16,7 @@ const UPLOADS_ROOT = join(process.cwd(), 'uploads');
 /** Photos utiles à l'analyse de l'accident (pas les pièces d'identité). */
 const CATEGORIES_ANALYSEES = ['plaque', 'vue_ensemble', 'vehicule', 'libre'];
 const MAX_PHOTOS = 10;
+const IMAGES_VIDEO_DEFAUT = 6;
 /** L'API refuse les images de plus de 5 Mo une fois encodées en base64. */
 const TAILLE_MAX_OCTETS = 3.7 * 1024 * 1024;
 type TypeImage = 'image/jpeg' | 'image/png' | 'image/webp';
@@ -36,12 +38,13 @@ const SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['conducteur', 'plaque', 'marque', 'couleur', 'zoneChoc', 'degats', 'gravite'],
+        required: ['conducteur', 'plaque', 'marque', 'couleur', 'typeVehicule', 'zoneChoc', 'degats', 'gravite'],
         properties: {
           conducteur: { type: 'string', enum: ['A', 'B'] },
           plaque: texte,
           marque: texte,
           couleur: texte,
+          typeVehicule: { type: 'string', enum: ['voiture', 'moto', 'camion', 'bus', 'inconnu'] },
           zoneChoc: { type: 'string', enum: ['avant', 'arriere', 'flanc_gauche', 'flanc_droit', 'inconnue'] },
           degats: texte,
           gravite: { type: 'string', enum: ['legere', 'moyenne', 'importante', 'inconnue'] },
@@ -59,11 +62,13 @@ const SCHEMA = {
 
 const CONSIGNES = `Tu assistes la police routière camerounaise dans l'établissement de constats d'accident.
 Tu reçois les photos prises sur les lieux par les conducteurs. Chaque photo est précédée d'une étiquette
-indiquant ce qu'elle est censée montrer (plaque du véhicule A, vue d'ensemble, véhicule B…).
+indiquant ce qu'elle est censée montrer (plaque du véhicule A, vue d'ensemble, véhicule B…). Des images tirées de la
+vidéo filmée en faisant le tour des véhicules peuvent suivre, dans l'ordre chronologique : elles montrent la même scène
+sous d'autres angles et servent à confirmer la position des véhicules, les dégâts et l'angle du choc.
 
 Décris uniquement ce qui est visible sur les photos :
 - pour chaque véhicule (A et B) : la plaque d'immatriculation lue telle quelle (chaîne vide si illisible), la marque,
-  la couleur, la zone de choc principale, une description courte des dégâts visibles et leur gravité ;
+  la couleur dominante en un mot (blanc, gris, rouge…), le type, la zone de choc principale, une description courte des dégâts visibles et leur gravité ;
 - le type de route et la météo apparents ;
 - le type de collision et l'angle entre les directions de déplacement des deux véhicules au moment du choc
   (0 = même sens, choc arrière ; 90 = perpendiculaire ; 180 = face à face ; -1 si impossible à estimer) ;
@@ -77,6 +82,8 @@ export class AnalyseIaService {
   private readonly logger = new Logger(AnalyseIaService.name);
   private readonly client: Anthropic | null;
   private readonly modele: string;
+  /** Nombre d'images tirées de la vidéo du tour (IA_IMAGES_VIDEO, 0 = vidéo non analysée). */
+  private readonly nbImagesVideo: number;
 
   constructor(
     config: ConfigService,
@@ -86,6 +93,8 @@ export class AnalyseIaService {
   ) {
     const cle = config.get<string>('ANTHROPIC_API_KEY');
     this.modele = config.get<string>('IA_MODELE')?.trim() ?? '';
+    const n = Number(config.get('IA_IMAGES_VIDEO', IMAGES_VIDEO_DEFAUT));
+    this.nbImagesVideo = Number.isFinite(n) ? Math.min(12, Math.max(0, Math.round(n))) : IMAGES_VIDEO_DEFAUT;
     // Sans clé ni modèle, l'analyse est simplement indisponible : le reste de l'application fonctionne.
     this.client = cle && this.modele ? new Anthropic({ apiKey: cle, timeout: 120_000, maxRetries: 1 }) : null;
   }
@@ -132,10 +141,16 @@ export class AnalyseIaService {
       contenu.push({ type: 'image', source: { type: 'base64', media_type: image.type, data: image.donnees } });
       photos++;
     }
-    if (photos === 0) {
-      return enregistrer({ statut: 'echouee', erreur: 'Aucune photo exploitable (JPEG, PNG ou WebP de moins de 3,7 Mo)' });
+    const imagesVideo = await this.imagesDuTour(dossierId);
+    imagesVideo.forEach((img, i) => {
+      contenu.push({ type: 'text', text: `Vidéo du tour, image ${i + 1} sur ${imagesVideo.length}` });
+      contenu.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: img.toString('base64') } });
+    });
+    const compte = { photosAnalysees: photos, imagesVideo: imagesVideo.length };
+    if (photos === 0 && imagesVideo.length === 0) {
+      return enregistrer({ statut: 'echouee', erreur: 'Aucune photo ni vidéo exploitable (photos JPEG, PNG ou WebP de moins de 3,7 Mo)' });
     }
-    contenu.push({ type: 'text', text: 'Analyse ces photos et réponds selon le schéma demandé.' });
+    contenu.push({ type: 'text', text: 'Analyse ces images et réponds selon le schéma demandé.' });
 
     try {
       const reponse = await this.client.beta.messages.create({
@@ -149,12 +164,12 @@ export class AnalyseIaService {
         messages: [{ role: 'user', content: contenu }],
       });
       if (reponse.stop_reason === 'refusal') {
-        return enregistrer({ statut: 'echouee', modele: reponse.model, photosAnalysees: photos, erreur: 'Le modèle a refusé d’analyser ces photos' });
+        return enregistrer({ statut: 'echouee', modele: reponse.model, ...compte, erreur: 'Le modèle a refusé d’analyser ces photos' });
       }
       const bloc = reponse.content.find((b) => b.type === 'text');
       if (!bloc || bloc.type !== 'text') throw new Error('Réponse de l’IA sans contenu');
       const resultat = this.normaliser(JSON.parse(bloc.text) as ResultatAnalyseIA);
-      return enregistrer({ statut: 'terminee', modele: reponse.model, photosAnalysees: photos, resultat });
+      return enregistrer({ statut: 'terminee', modele: reponse.model, ...compte, resultat });
     } catch (err) {
       let message: string;
       if (err instanceof Anthropic.AuthenticationError) message = 'Clé ANTHROPIC_API_KEY invalide';
@@ -162,8 +177,29 @@ export class AnalyseIaService {
       else if (err instanceof Anthropic.APIError) message = `Erreur de l’API IA (${err.status ?? 'réseau'})`;
       else message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Analyse IA du dossier ${dossierId} échouée : ${message}`);
-      return enregistrer({ statut: 'echouee', modele: this.modele, photosAnalysees: photos, erreur: message });
+      return enregistrer({ statut: 'echouee', modele: this.modele, ...compte, erreur: message });
     }
+  }
+
+  /** La vidéo complète les photos : si elle est illisible, l'analyse se fait sans elle. */
+  private async imagesDuTour(dossierId: string): Promise<Buffer[]> {
+    if (this.nbImagesVideo === 0) return [];
+    const video = await this.mediasRepo.findOne({ where: { dossierId, categorie: 'video_tour' }, order: { horodatage: 'DESC' } });
+    const chemin = video && this.cheminLocal(video.url);
+    if (!video || !chemin) return [];
+    try {
+      return await extraireImages(chemin, video.dureeSecondes ?? 0, this.nbImagesVideo);
+    } catch (err) {
+      this.logger.warn(`Vidéo du dossier ${dossierId} non analysée : ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  /** Chemin d'un fichier reçu, ou null s'il n'existe pas ou sort du dossier des envois. */
+  private cheminLocal(url: string): string | null {
+    if (!url.startsWith('/uploads/')) return null;
+    const chemin = normalize(join(UPLOADS_ROOT, url.slice('/uploads/'.length)));
+    return chemin.startsWith(UPLOADS_ROOT + sep) && existsSync(chemin) ? chemin : null;
   }
 
   private etiquette(m: Media): string {
@@ -178,10 +214,10 @@ export class AnalyseIaService {
 
   /** Lit une photo stockée localement ; ignore celles que l'API refuserait. */
   private lireImage(url: string): { type: TypeImage; donnees: string } | null {
-    if (!url.startsWith('/uploads/')) return null;
-    const chemin = normalize(join(UPLOADS_ROOT, url.slice('/uploads/'.length)));
+    const chemin = this.cheminLocal(url);
+    if (!chemin) return null;
     const type = TYPES_IMAGE[extname(chemin).toLowerCase()];
-    if (!type || !chemin.startsWith(UPLOADS_ROOT + sep) || !existsSync(chemin)) return null;
+    if (!type) return null;
     if (statSync(chemin).size > TAILLE_MAX_OCTETS) return null;
     return { type, donnees: readFileSync(chemin).toString('base64') };
   }
