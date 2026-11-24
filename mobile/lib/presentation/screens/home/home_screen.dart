@@ -25,9 +25,10 @@ class HomeScreen extends ConsumerWidget {
     final enCours =
         dossiersAsync.value
             ?.where((d) => (d['statut'] as String?) == 'brouillon')
-            .length ??
-        1;
-    final historiques = dossiersAsync.value?.length ?? 12;
+            .length;
+    final historiques = dossiersAsync.value
+        ?.where((d) => (d['statut'] as String?) != 'brouillon')
+        .length;
 
     return Scaffold(
       body: SafeArea(
@@ -43,11 +44,9 @@ class HomeScreen extends ConsumerWidget {
             ),
             children: [
               _TopBar(
-                userInitial: user == null
-                    ? 'J'
-                    : (user.prenom.isNotEmpty
-                          ? user.prenom[0].toUpperCase()
-                          : 'J'),
+                userInitial: user != null && user.prenom.isNotEmpty
+                    ? user.prenom[0].toUpperCase()
+                    : '',
                 onProfileTap: () =>
                     Navigator.pushNamed(context, AppRoutes.profile),
                 onNotificationsTap: () => Navigator.push(
@@ -59,7 +58,9 @@ class HomeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xl),
               Text(
-                t('home_bonjour').replaceFirst('%s', user?.prenom ?? 'Japhet'),
+                user == null
+                    ? t('home_bonjour').replaceFirst(', %s', '')
+                    : t('home_bonjour').replaceFirst('%s', user.prenom),
                 style: theme.textTheme.bodyLarge,
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -77,7 +78,7 @@ class HomeScreen extends ConsumerWidget {
                   Expanded(
                     child: _StatCard(
                       icon: Icons.pending_actions_outlined,
-                      value: '$enCours',
+                      value: enCours == null ? '—' : '$enCours',
                       title: t('home_en_cours'),
                       subtitle: t('home_en_cours_sous_titre'),
                     ),
@@ -86,7 +87,7 @@ class HomeScreen extends ConsumerWidget {
                   Expanded(
                     child: _StatCard(
                       icon: Icons.history_outlined,
-                      value: '$historiques',
+                      value: historiques == null ? '—' : '$historiques',
                       title: t('home_historique'),
                       subtitle: t('home_historique_sous_titre'),
                     ),

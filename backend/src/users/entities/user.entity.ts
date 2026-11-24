@@ -28,6 +28,13 @@ export class User {
   @Column({ type: 'varchar', length: 30, nullable: true })
   permisConduire: string | null;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  adresse: string | null;
+
+  /** Assureur et numéro de contrat déclarés par le conducteur. */
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  assurance: string | null;
+
   @Column({ type: 'varchar', length: 20, default: 'usager' })
   role: RoleUtilisateur;
 

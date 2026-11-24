@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/i18n/app_strings.dart';
+import '../../../core/network/erreurs.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_extension.dart';
 import '../../widgets/app_form_field.dart';
 
 /// Écran générique d'édition d'un document officiel (permis, assurance...).
-/// [onSave] est optionnel : quand fourni (ex. permis de conduire, qui fait
-/// partie du profil utilisateur), la valeur est persistée via ce callback ;
-/// sinon la modification reste locale à cet écran (ex. assurance, qui n'a
-/// pas encore de champ dédié côté compte).
+/// La valeur est enregistrée dans le profil via [onSave].
 class DocumentDetailScreen extends StatefulWidget {
   const DocumentDetailScreen({
     super.key,
@@ -17,14 +15,14 @@ class DocumentDetailScreen extends StatefulWidget {
     required this.icon,
     required this.label,
     required this.initialValue,
-    this.onSave,
+    required this.onSave,
   });
 
   final String title;
   final IconData icon;
   final String label;
   final String initialValue;
-  final Future<void> Function(String valeur)? onSave;
+  final Future<void> Function(String valeur) onSave;
 
   @override
   State<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
@@ -44,7 +42,16 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   Future<void> _enregistrer(String Function(String) t) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _enregistrement = true);
-    await widget.onSave?.call(_controller.text.trim());
+    try {
+      await widget.onSave(_controller.text.trim());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _enregistrement = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(messageServeur(e) ?? t('commun_echec_enregistrement'))),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _enregistrement = false);
     ScaffoldMessenger.of(

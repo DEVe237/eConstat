@@ -1,8 +1,5 @@
 import 'dart:convert';
 
-import 'package:uuid/uuid.dart';
-
-import '../../core/config/app_config.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/token_storage.dart';
 import '../../domain/entities/utilisateur.dart';
@@ -17,8 +14,8 @@ class AuthRepository {
     final token = await _storage.lireToken();
     final userJson = await _storage.lireUtilisateurJson();
     if (token == null || userJson == null) return null;
-    // Session laissée par le mode simulé : inutilisable avec le vrai serveur.
-    if (!kModeSimule && token.startsWith('jeton-simule-')) {
+    // Session laissée par une ancienne version de démonstration : inutilisable avec le vrai serveur.
+    if (token.startsWith('jeton-simule-')) {
       await _storage.effacer();
       return null;
     }
@@ -29,17 +26,6 @@ class AuthRepository {
     required String email,
     required String motDePasse,
   }) async {
-    if (kModeSimule) {
-      final prenom = email.split('@').first;
-      final utilisateur = Utilisateur(
-        id: const Uuid().v4(),
-        nom: 'Utilisateur',
-        prenom: prenom.isEmpty ? 'Jean' : prenom[0].toUpperCase() + prenom.substring(1),
-        email: email,
-      );
-      return _persisterSessionSimulee(utilisateur);
-    }
-
     final reponse = await _api.dio.post('/auth/login', data: {
       'email': email,
       'motDePasse': motDePasse,
@@ -55,18 +41,6 @@ class AuthRepository {
     String? telephone,
     String? permisConduire,
   }) async {
-    if (kModeSimule) {
-      final utilisateur = Utilisateur(
-        id: const Uuid().v4(),
-        nom: nom,
-        prenom: prenom,
-        email: email,
-        telephone: telephone,
-        permisConduire: permisConduire,
-      );
-      return _persisterSessionSimulee(utilisateur);
-    }
-
     final reponse = await _api.dio.post('/auth/register', data: {
       'nom': nom,
       'prenom': prenom,
@@ -79,23 +53,24 @@ class AuthRepository {
     return _persisterSession(reponse.data as Map<String, dynamic>);
   }
 
-  Future<Utilisateur> _persisterSessionSimulee(Utilisateur utilisateur) async {
-    await _storage.sauvegarder(
-      token: 'jeton-simule-${utilisateur.id}',
-      userJson: jsonEncode(utilisateur.toJson()),
-    );
-    return utilisateur;
-  }
-
   Future<void> deconnexion() => _storage.effacer();
 
-  /// Édition de profil locale : aucun backend d'édition de profil n'existe
-  /// pour l'instant, donc on persiste directement dans le stockage sécurisé
-  /// du téléphone (survit aux redémarrages de l'app, contrairement à un
-  /// simple changement d'état en mémoire).
   Future<Utilisateur> mettreAJourProfil(Utilisateur utilisateur) async {
-    await _storage.sauvegarderUtilisateur(jsonEncode(utilisateur.toJson()));
-    return utilisateur;
+    final reponse = await _api.dio.patch('/auth/moi', data: {
+      'prenom': utilisateur.prenom,
+      'nom': utilisateur.nom,
+      if (utilisateur.telephone != null) 'telephone': utilisateur.telephone,
+      if (utilisateur.permisConduire != null) 'permisConduire': utilisateur.permisConduire,
+      if (utilisateur.adresse != null) 'adresse': utilisateur.adresse,
+      if (utilisateur.assurance != null) 'assurance': utilisateur.assurance,
+    });
+    final aJour = Utilisateur.fromJson(reponse.data as Map<String, dynamic>);
+    await _storage.sauvegarderUtilisateur(jsonEncode(aJour.toJson()));
+    return aJour;
+  }
+
+  Future<void> changerMotDePasse({required String actuel, required String nouveau}) {
+    return _api.dio.post('/auth/mot-de-passe', data: {'actuel': actuel, 'nouveau': nouveau});
   }
 
   Future<Utilisateur> _persisterSession(Map<String, dynamic> data) async {

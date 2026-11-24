@@ -58,12 +58,16 @@ class HistoriqueScreen extends ConsumerWidget {
                           ? t('historique_transmis')
                           : (statut == 'valide'
                                 ? t('historique_valide')
-                                : t('historique_en_cours')),
+                                : (statut == 'conteste'
+                                      ? t('historique_conteste')
+                                      : t('historique_en_cours'))),
                       statutColor: statut == 'transmis'
                           ? const Color(0xFF6B7280)
                           : (statut == 'valide'
                                 ? const Color(0xFF1E79E8)
-                                : const Color(0xFFE07200)),
+                                : (statut == 'conteste'
+                                      ? const Color(0xFFB60B0B)
+                                      : const Color(0xFFE07200))),
                       plaque: premierePlaque,
                     );
                   })

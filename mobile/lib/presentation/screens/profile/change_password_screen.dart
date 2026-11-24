@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/i18n/app_strings.dart';
+import '../../../core/network/erreurs.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../state/auth_notifier.dart';
 import '../../widgets/app_form_field.dart';
 
-class ChangePasswordScreen extends StatefulWidget {
+class ChangePasswordScreen extends ConsumerStatefulWidget {
   const ChangePasswordScreen({super.key});
 
   @override
-  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+  ConsumerState<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
 }
 
-class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _actuelCtrl = TextEditingController();
   final _nouveauCtrl = TextEditingController();
@@ -29,7 +32,18 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Future<void> _valider(String Function(String) t) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _enregistrement = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+    try {
+      await ref
+          .read(authNotifierProvider.notifier)
+          .changerMotDePasse(actuel: _actuelCtrl.text, nouveau: _nouveauCtrl.text);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _enregistrement = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(messageServeur(e) ?? t('commun_echec_enregistrement'))),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _enregistrement = false);
     ScaffoldMessenger.of(

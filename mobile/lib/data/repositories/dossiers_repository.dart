@@ -2,9 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:uuid/uuid.dart';
 
-import '../../core/config/app_config.dart';
 import '../../core/network/api_client.dart';
 import '../../domain/entities/analyse_ia.dart';
 import '../../domain/entities/capture_guidee.dart';
@@ -52,14 +50,6 @@ class DossiersRepository {
       for (final etape in etapesCapture)
         if (draft.captures[etape.id] != null) draft.captures[etape.id]!,
     ];
-    if (kModeSimule) {
-      for (var i = 0; i <= captures.length; i++) {
-        progression?.call(i, captures.length);
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-      }
-      return draft.dossierId ?? const Uuid().v4();
-    }
-
     final dossierId = draft.dossierId ?? await _creerDossier(draft);
     // Mémorisé tout de suite : un nouvel essai reprend ce dossier au lieu d'en créer un autre.
     surCreation?.call(dossierId);
@@ -84,21 +74,6 @@ class DossiersRepository {
   /// Ne lève pas d'erreur : un échec renvoie une analyse « echouee » et le
   /// conducteur remplit simplement le formulaire lui-même.
   Future<AnalyseIa> analyserPhotos(String dossierId) async {
-    if (kModeSimule) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      return const AnalyseIa(
-        statut: 'terminee',
-        vehicules: [
-          VehiculeAnalyse(conducteur: 'A', plaque: 'CE 482 AB', marque: 'Toyota Corolla', couleur: 'gris', zoneChoc: 'avant', degats: 'Pare-chocs avant enfoncé, phare droit brisé', gravite: 'moyenne'),
-          VehiculeAnalyse(conducteur: 'B', plaque: 'LT 219 CD', marque: 'Hyundai Accent', couleur: 'blanc', zoneChoc: 'flanc_gauche', degats: 'Portières gauches déformées', gravite: 'moyenne'),
-        ],
-        conditionsMeteo: 'meteo_humide',
-        typeCollision: 'laterale',
-        angleImpactDeg: 90,
-        resume: 'Collision latérale à une intersection urbaine : l’avant du véhicule A a percuté le flanc gauche du véhicule B. Chaussée humide. (Analyse de démonstration, mode simulé.)',
-        confiance: 0.78,
-      );
-    }
     try {
       final reponse = await _api.dio.post(
         '/dossiers/$dossierId/analyse-ia',
@@ -115,14 +90,6 @@ class DossiersRepository {
   /// puis soumission finale. Reflète le flux mobile → backend du diagramme de
   /// séquence (cahier de conception §3.3).
   Future<DossierEnvoye> envoyerConstat(ConstatDraft draft) async {
-    if (kModeSimule) {
-      return DossierEnvoye(
-        id: draft.dossierId ?? const Uuid().v4(),
-        statut: 'transmis',
-        hashIntegrite: 'simule-${DateTime.now().millisecondsSinceEpoch}',
-      );
-    }
-
     final dossierId = draft.dossierId ?? await preparerBrouillon(draft);
     await _api.dio.patch('/dossiers/$dossierId', data: _circonstances(draft));
 
@@ -150,41 +117,9 @@ class DossiersRepository {
   }
 
   Future<List<Map<String, dynamic>>> listerDossiers() async {
-    if (kModeSimule) return _dossiersSimules;
-
     final reponse = await _api.dio.get('/dossiers');
     return List<Map<String, dynamic>>.from(reponse.data as List);
   }
-
-  /// Dossiers simulés (mode design, backend arrêté) — même forme que ce que
-  /// renvoie le vrai backend, pour que `historique_screen.dart` et
-  /// `home_screen.dart` s'affichent normalement sans serveur.
-  static final _dossiersSimules = <Map<String, dynamic>>[
-    {
-      'id': const Uuid().v4(),
-      'statut': 'brouillon',
-      'dateCreation': DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(),
-      'vehiculesImpliques': [
-        {'plaque': 'CE-1234-AB'},
-      ],
-    },
-    {
-      'id': const Uuid().v4(),
-      'statut': 'transmis',
-      'dateCreation': DateTime.now().subtract(const Duration(days: 3)).toIso8601String(),
-      'vehiculesImpliques': [
-        {'plaque': 'CE-5678-CD'},
-      ],
-    },
-    {
-      'id': const Uuid().v4(),
-      'statut': 'valide',
-      'dateCreation': DateTime.now().subtract(const Duration(days: 12)).toIso8601String(),
-      'vehiculesImpliques': [
-        {'plaque': 'CE-9012-EF'},
-      ],
-    },
-  ];
 
   Future<String> _creerDossier(ConstatDraft draft) async {
     final reponse = await _api.dio.post('/dossiers', data: _circonstances(draft));

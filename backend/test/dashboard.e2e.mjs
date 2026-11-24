@@ -99,6 +99,14 @@ check((await call('/dashboard/dossiers', { token: tU })).status === 403, 'conduc
 check((await call('/admin/utilisateurs', { token: tG })).status === 403, 'agent refusé sur /admin');
 check((await call('/dashboard/statistiques', { token: tS })).status === 403, 'assureur refusé sur les statistiques');
 
+// --- profil du conducteur ---------------------------------------------------------
+const profil = await call('/auth/moi', { method: 'PATCH', token: tU, json: { telephone: '+237 699 00 11 22', adresse: 'Bastos, Yaoundé', assurance: 'Assureur Test 123', permisConduire: 'CM-0001', role: 'administrateur', email: 'pirate@test.local' } });
+check(profil.status === 200 && profil.data.adresse === 'Bastos, Yaoundé' && !('motDePasseHash' in profil.data), 'profil enregistré sur le serveur');
+check(profil.data.role === 'usager' && profil.data.email !== 'pirate@test.local', 'profil : rôle et e-mail non modifiables');
+check((await call('/auth/moi', { method: 'PATCH', token: tU, json: { adresse: '' } })).data.adresse === null, 'profil : un champ facultatif peut être vidé');
+check((await call('/auth/moi', { method: 'PATCH', token: tU, json: { nom: '' } })).status === 400, 'profil : nom vide refusé');
+check((await call('/auth/moi', { method: 'PATCH', token: tG, json: { nom: 'Autre' } })).status === 403, 'profil : un agent ne change pas son identité lui-même');
+
 // --- constat depuis l'application mobile ----------------------------------------
 const d = await call('/dossiers', { method: 'POST', token: tU, json: { dateAccident: new Date(Date.now() - 40 * 60000).toISOString(), lat: 3.86686, lng: 11.51684, pointDeChoc: 'avant', conditionsMeteo: 'meteo_pluie' } });
 const id = d.data.id;

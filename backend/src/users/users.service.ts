@@ -80,6 +80,18 @@ export class UsersService implements OnApplicationBootstrap {
     return UsersService.publique(await this.usersRepo.save(user));
   }
 
+  /** Modification par l'intéressé : une valeur vide efface le champ facultatif. */
+  async mettreAJourProfil(id: string, data: Partial<Pick<User, 'prenom' | 'nom' | 'telephone' | 'permisConduire' | 'adresse' | 'assurance'>>): Promise<UserPublic | null> {
+    const user = await this.findById(id);
+    if (!user) return null;
+    if (data.prenom !== undefined) user.prenom = data.prenom!.trim();
+    if (data.nom !== undefined) user.nom = data.nom!.trim();
+    for (const champ of ['telephone', 'permisConduire', 'adresse', 'assurance'] as const) {
+      if (data[champ] !== undefined) user[champ] = data[champ]?.trim() || null;
+    }
+    return UsersService.publique(await this.usersRepo.save(user));
+  }
+
   static publique(user: User): UserPublic {
     const { motDePasseHash: _h, ...reste } = user;
     return reste;

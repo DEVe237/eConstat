@@ -31,7 +31,7 @@ class ConfirmationScreen extends StatelessWidget {
     final t = AppStrings.of(context).t;
     final args =
         ModalRoute.of(context)!.settings.arguments as ConfirmationArgs?;
-    final numeroDossier = args?.numeroDossier ?? '52941';
+    final numeroDossier = args?.numeroDossier ?? '—';
     final transmis = args?.transmisAuServeur ?? false;
     final dossierId = args?.dossierId;
 

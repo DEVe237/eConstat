@@ -1,10 +1,11 @@
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Body, Controller, Get, HttpCode, NotFoundException, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangerMotDePasseDto } from './dto/mot-de-passe.dto';
+import { ProfilDto } from './dto/profil.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { COOKIE_SESSION, JwtPayload } from './jwt.strategy';
@@ -56,6 +57,17 @@ export class AuthController {
     const user = await this.usersService.findById(req.user.sub);
     if (!user || user.actif === false) throw new NotFoundException('Compte introuvable');
     return UsersService.publique(user);
+  }
+
+  /** Le conducteur modifie son profil ; les comptes du dashboard sont gérés par l'administrateur. */
+  @Patch('moi')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  async modifierProfil(@Req() req: Request & { user: JwtPayload }, @Body() dto: ProfilDto) {
+    if (req.user.role !== 'usager') throw new ForbiddenException('Ce compte est géré par un administrateur');
+    const user = await this.usersService.mettreAJourProfil(req.user.sub, dto);
+    if (!user) throw new NotFoundException('Compte introuvable');
+    return user;
   }
 
   @Post('mot-de-passe')

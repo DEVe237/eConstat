@@ -47,6 +47,9 @@ class AuthNotifier extends AsyncNotifier<Utilisateur?> {
     state = const AsyncData(null);
   }
 
+  Future<void> changerMotDePasse({required String actuel, required String nouveau}) =>
+      ref.read(authRepositoryProvider).changerMotDePasse(actuel: actuel, nouveau: nouveau);
+
   Future<void> mettreAJourProfil(Utilisateur utilisateur) async {
     final misAJour = await ref.read(authRepositoryProvider).mettreAJourProfil(utilisateur);
     state = AsyncData(misAJour);

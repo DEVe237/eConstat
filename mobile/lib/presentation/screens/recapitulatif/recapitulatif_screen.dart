@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signature/signature.dart';
 
 import '../../../core/i18n/app_strings.dart';
+import '../../../core/network/erreurs.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_extension.dart';
@@ -91,6 +92,7 @@ class _RecapitulatifScreenState extends ConsumerState<RecapitulatifScreen> {
       final resultat = await ref
           .read(dossiersRepositoryProvider)
           .envoyerConstat(draft);
+      ref.invalidate(historiqueProvider);
       if (!mounted) return;
       Navigator.pushNamed(
         context,
@@ -108,7 +110,7 @@ class _RecapitulatifScreenState extends ConsumerState<RecapitulatifScreen> {
           e.type == DioExceptionType.connectionError ||
               e.type == DioExceptionType.connectionTimeout
           ? t('recap_erreur_connexion')
-          : t('recap_erreur_envoi').replaceFirst('%s', _messageServeur(e));
+          : t('recap_erreur_envoi').replaceFirst('%s', messageServeur(e) ?? '${e.message}');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
@@ -365,14 +367,6 @@ class _RecapitulatifScreenState extends ConsumerState<RecapitulatifScreen> {
         ),
       ),
     );
-  }
-
-  /// Explication du serveur (« Dossier incomplet : … ») plutôt que l'erreur technique.
-  String _messageServeur(DioException e) {
-    final data = e.response?.data;
-    final message = data is Map ? data['message'] : null;
-    if (message is List) return message.join(', ');
-    return message is String ? message : '${e.message}';
   }
 
   String _keySignature(int index, VehiculeImplique vehicule) {

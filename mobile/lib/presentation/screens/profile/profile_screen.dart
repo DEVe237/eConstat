@@ -24,11 +24,10 @@ class ProfileScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final t = AppStrings.of(context).t;
     final user = ref.watch(authNotifierProvider).value;
-    final prenom = user?.prenom ?? 'Jean';
-    final nom = user?.nom ?? 'Dupont';
-    final email = user?.email ?? 'jean.dupont@email.com';
-    final telephone = user?.telephone ?? '+33 6 12 34 56 78';
-    final permis = user?.permisConduire ?? '15AA12345';
+    String ou(String? v) => v == null || v.isEmpty ? t('profil_non_renseigne') : v;
+    final prenom = user?.prenom ?? '';
+    final nom = user?.nom ?? '';
+    final email = ou(user?.email);
 
     return Scaffold(
       body: SafeArea(
@@ -163,7 +162,7 @@ class ProfileScreen extends ConsumerWidget {
             SettingsTile(
               icon: Icons.phone_outlined,
               title: t('profil_telephone'),
-              subtitle: telephone,
+              subtitle: ou(user?.telephone),
               onTap: () => Navigator.pushNamed(context, AppRoutes.editProfile),
             ),
             SettingsTile(
@@ -175,14 +174,14 @@ class ProfileScreen extends ConsumerWidget {
             SettingsTile(
               icon: Icons.home_outlined,
               title: t('profil_adresse'),
-              subtitle: '123 Rue de la République, 75001 Paris',
+              subtitle: ou(user?.adresse),
               onTap: () => Navigator.pushNamed(context, AppRoutes.editProfile),
             ),
             SectionHeader(title: t('profil_documents')),
             SettingsTile(
               icon: Icons.badge_outlined,
               title: t('profil_permis'),
-              subtitle: permis,
+              subtitle: ou(user?.permisConduire),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -190,7 +189,7 @@ class ProfileScreen extends ConsumerWidget {
                     title: t('profil_permis'),
                     icon: Icons.badge_outlined,
                     label: t('profil_numero_permis'),
-                    initialValue: permis,
+                    initialValue: user?.permisConduire ?? '',
                     onSave: (valeur) => ref
                         .read(authNotifierProvider.notifier)
                         .mettreAJourProfil(
@@ -205,7 +204,7 @@ class ProfileScreen extends ConsumerWidget {
             SettingsTile(
               icon: Icons.verified_user_outlined,
               title: t('profil_assurance'),
-              subtitle: 'MACIF — Contrat N° 987654321',
+              subtitle: ou(user?.assurance),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -213,7 +212,14 @@ class ProfileScreen extends ConsumerWidget {
                     title: t('profil_assurance'),
                     icon: Icons.verified_user_outlined,
                     label: t('profil_assureur_contrat'),
-                    initialValue: 'MACIF — Contrat N° 987654321',
+                    initialValue: user?.assurance ?? '',
+                    onSave: (valeur) => ref
+                        .read(authNotifierProvider.notifier)
+                        .mettreAJourProfil(
+                          (ref.read(authNotifierProvider).value!).copyWith(
+                            assurance: valeur,
+                          ),
+                        ),
                   ),
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/i18n/app_strings.dart';
+import '../../../core/network/erreurs.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/utilisateur.dart';
 import '../../state/auth_notifier.dart';
@@ -19,9 +20,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final _prenomCtrl = TextEditingController(text: _user?.prenom);
   late final _nomCtrl = TextEditingController(text: _user?.nom);
   late final _telephoneCtrl = TextEditingController(text: _user?.telephone);
-  late final _adresseCtrl = TextEditingController(
-    text: '123 Rue de la République, 75001 Yaounde',
-  );
+  late final _adresseCtrl = TextEditingController(text: _user?.adresse);
   bool _enregistrement = false;
 
   Utilisateur? get _user => ref.read(authNotifierProvider).value;
@@ -41,15 +40,25 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     if (user == null) return;
 
     setState(() => _enregistrement = true);
-    await ref
-        .read(authNotifierProvider.notifier)
-        .mettreAJourProfil(
-          user.copyWith(
-            prenom: _prenomCtrl.text.trim(),
-            nom: _nomCtrl.text.trim(),
-            telephone: _telephoneCtrl.text.trim(),
-          ),
-        );
+    try {
+      await ref
+          .read(authNotifierProvider.notifier)
+          .mettreAJourProfil(
+            user.copyWith(
+              prenom: _prenomCtrl.text.trim(),
+              nom: _nomCtrl.text.trim(),
+              telephone: _telephoneCtrl.text.trim(),
+              adresse: _adresseCtrl.text.trim(),
+            ),
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _enregistrement = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(messageServeur(e) ?? t('commun_echec_enregistrement'))),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _enregistrement = false);
     ScaffoldMessenger.of(
