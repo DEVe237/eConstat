@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Reconstitution 3D</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #d7dce5; }
+  #app { width: 100vw; height: 100vh; display: block; }
+  #erreur {
+    position: fixed; top: 0; left: 0; right: 0; padding: 12px;
+    font: 13px sans-serif; color: #fff; background: #b60b0b; display: none;
+  }
+  #source {
+    position: fixed; left: 10px; bottom: 10px; padding: 5px 10px; border-radius: 99px;
+    font: 600 11px sans-serif; color: #fff; background: rgba(0, 122, 94, .85); display: none;
+  }
+</style>
+</head>
+<body>
+<div id="erreur"></div>
+<div id="app"></div>
+<div id="source"></div>
+<script type="module">
+  import { initScene } from './scene-builder.js';
+
+  function afficherErreur(message) {
+    const el = document.getElementById('erreur');
+    el.textContent = message;
+    el.style.display = 'block';
+  }
+
+  async function obtenirDonneesScene() {
+    // Le worker headless injecte les données avant chargement de la page
+    // (page.evaluateOnNewDocument) ; en usage interactif (WebView / navigateur),
+    // on les récupère depuis l'API via le paramètre ?dossierId=...
+    if (window.__sceneData) return window.__sceneData;
+
+    const params = new URLSearchParams(window.location.search);
+    const dossierId = params.get('dossierId');
+    if (!dossierId) throw new Error('dossierId manquant dans l\'URL');
+
+    const apiBase = params.get('apiBase') || window.location.origin;
+    // Lien signé délivré par l'API (exp + sig) : la scène n'est pas publique.
+    const jeton = new URLSearchParams({ exp: params.get('exp') || '', sig: params.get('sig') || '' });
+    const reponse = await fetch(`${apiBase}/dossiers/${dossierId}/simulation3d/scene?${jeton}`);
+    if (!reponse.ok) throw new Error(`Échec chargement scène (${reponse.status})`);
+    return reponse.json();
+  }
+
+  obtenirDonneesScene()
+    .then((scene) => {
+      const container = document.getElementById('app');
+      window.seekTo = initScene(container, scene);
+      window.__sceneReady = true;
+      if (scene.sourceTrajectoire === 'ia' && scene.analyseIA) {
+        const badge = document.getElementById('source');
+        badge.textContent = `Angle d'impact estimé par l'IA : ${scene.analyseIA.angleImpactDeg}°`;
+        badge.style.display = 'block';
+      }
+      // Lecture en boucle à la demande (?lecture=auto, dashboard). La WebView
+      // mobile pilote seekTo avec son curseur, et le worker headless image par
+      // image : ni l'un ni l'autre ne doit être concurrencé par la boucle.
+      if (!window.__sceneData && new URLSearchParams(window.location.search).get('lecture') === 'auto') {
+        const duree = scene.dureeSecondes || 20;
+        const pause = 1.5;
+        const debut = performance.now();
+        const boucle = (maintenant) => {
+          const t = ((maintenant - debut) / 1000) % (duree + pause);
+          window.seekTo(Math.min(t, duree));
+          requestAnimationFrame(boucle);
+        };
+        requestAnimationFrame(boucle);
+      }
+    })
+    .catch((err) => {
+      console.error(err);
+      afficherErreur('Impossible d\'afficher la reconstitution 3D : ' + err.message);
+      window.__sceneReady = true;
+    });
+</script>
+</body>
+</html>

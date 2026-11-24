@@ -1,0 +1,30 @@
+# Worker de génération 3D (cahier de conception §6.3 / §9.2). Basé sur
+# l'image officielle Puppeteer : Chromium et toutes ses dépendances système
+# sont déjà présentes, ce qui évite de débugger des libs manquantes sur une
+# image Debian "slim" (piège classique avec Puppeteer/Chromium en conteneur).
+# Même version que puppeteer dans package-lock.json : le Chromium fourni doit correspondre.
+FROM ghcr.io/puppeteer/puppeteer:25.9.0
+
+USER root
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+# L'image de base bloque les scripts d'installation (postinstall) par défaut.
+# ffmpeg-static en a besoin pour télécharger son binaire ffmpeg — sans quoi
+# l'encodage vidéo du worker échoue silencieusement en runtime. Le Chromium
+# de Puppeteer, lui, est déjà fourni par l'image de base (découverte à
+# l'exécution, pas besoin de son script d'installation).
+RUN node node_modules/ffmpeg-static/install.js
+
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY src ./src
+RUN npm run build
+
+COPY public ./public
+
+ENV NODE_ENV=production
+# --no-sandbox est déjà passé explicitement à Puppeteer dans le processor ;
+# on reste root ici pour rester simple (image de dev, pas de durcissement
+# sécurité pour ce build initial).
+CMD ["node", "dist/worker.js"]

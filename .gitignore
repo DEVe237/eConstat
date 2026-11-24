@@ -1,0 +1,27 @@
+# Secrets
+.env
+.env.*
+!.env.*.example
+*.jks
+*.keystore
+key.properties
+local.properties
+
+# Fichiers des usagers, artefacts
+uploads/
+node_modules/
+*.log
+*.tsbuildinfo
+
+# Outils locaux
+.idea/
+backend/Dockerfile.worker-patch
+
+# Documents et médias de présentation (hors code)
+/*.mp4
+/*.pdf
+/*.pptx
+/*.docx
+/*.png
+/*.txt
+mobile/android/build/

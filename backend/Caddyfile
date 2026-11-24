@@ -1,0 +1,16 @@
+# HTTPS automatique (Let's Encrypt). Les deux noms de domaine doivent pointer
+# vers le serveur (enregistrements DNS A/AAAA) avant le premier démarrage.
+
+{$DOMAINE_WEB} {
+	encode gzip
+	reverse_proxy web:3001
+}
+
+{$DOMAINE_API} {
+	encode gzip
+	# Vidéos et photos envoyées depuis l'application mobile (limite de l'API : 200 Mo).
+	request_body {
+		max_size 210MB
+	}
+	reverse_proxy api:3000
+}

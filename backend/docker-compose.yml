@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: camaircost-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: camaircost
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-camaircost_dev}
+      POSTGRES_DB: camaircost
+    ports:
+      - "5433:5432"
+    volumes:
+      - camaircost_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: camaircost-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - camaircost_redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: camaircost-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: camaircost
+      MINIO_ROOT_PASSWORD: camaircost_dev_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - camaircost_miniodata:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: camaircost-worker
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: camaircost
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-camaircost_dev}
+      DATABASE_NAME: camaircost
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_PUBLIC_ENDPOINT: localhost
+      MINIO_PUBLIC_PORT: 9000
+      MINIO_ACCESS_KEY: camaircost
+      MINIO_SECRET_KEY: camaircost_dev_minio
+      MINIO_BUCKET: simulations3d
+      SIMULATION3D_FPS: 24
+      SIMULATION3D_DUREE_SECONDES: 20
+
+  # --- Production (profil « prod ») -------------------------------------------
+  # docker compose --profile prod up -d --build
+  # Lit les secrets dans .env.prod (voir .env.prod.example). En développement,
+  # l'API et le dashboard tournent hors Docker (npm run start:dev / npm run dev).
+  api:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: camaircost-api
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - camaircost_uploads:/app/uploads
+
+  web:
+    profiles: ["prod"]
+    build:
+      context: ../web
+      args:
+        API_URL: http://api:3000
+    container_name: camaircost-web
+    restart: unless-stopped
+    depends_on: [api]
+
+  # Point d'entrée HTTPS (certificats Let's Encrypt automatiques) :
+  # DOMAINE_WEB → dashboard, DOMAINE_API → API de l'application mobile.
+  caddy:
+    profiles: ["prod"]
+    image: caddy:2-alpine
+    container_name: camaircost-caddy
+    restart: unless-stopped
+    depends_on: [web, api]
+    env_file: .env.prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - camaircost_caddy:/data
+
+volumes:
+  camaircost_pgdata:
+  camaircost_redisdata:
+  camaircost_miniodata:
+  camaircost_uploads:
+  camaircost_caddy:

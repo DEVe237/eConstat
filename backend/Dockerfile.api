@@ -1,0 +1,23 @@
+# API NestJS. Même image de base que le worker : l'export PDF des dossiers
+# utilise Chromium (Puppeteer), déjà fourni avec toutes ses dépendances.
+# Même version que puppeteer dans package-lock.json : le Chromium fourni doit correspondre.
+FROM ghcr.io/puppeteer/puppeteer:25.9.0
+
+USER root
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+# Scripts d'installation bloqués par l'image de base : binaire ffmpeg (durée des vidéos, rendu 3D).
+RUN node node_modules/ffmpeg-static/install.js
+
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY src ./src
+RUN npm run build && npm prune --omit=dev
+
+COPY public ./public
+RUN mkdir -p /app/uploads
+
+ENV NODE_ENV=production
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
