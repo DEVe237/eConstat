@@ -9,10 +9,10 @@ export const dateCourte = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: TZ }) : '—';
 
 export const STATUTS: Record<Statut, { libelle: string; classes: string; point: string }> = {
-  transmis: { libelle: 'À traiter', classes: 'bg-amber-50 text-amber-800 ring-amber-200', point: '#f59e0b' },
-  valide: { libelle: 'Validé', classes: 'bg-emerald-50 text-emerald-800 ring-emerald-200', point: '#10b981' },
-  conteste: { libelle: 'Contesté', classes: 'bg-rose-50 text-rose-800 ring-rose-200', point: '#e11d48' },
-  brouillon: { libelle: 'Brouillon', classes: 'bg-zinc-100 text-zinc-700 ring-zinc-200', point: '#71717a' },
+  transmis: { libelle: 'À traiter', classes: 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300', point: '#f59e0b' },
+  valide: { libelle: 'Validé', classes: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300', point: '#10b981' },
+  conteste: { libelle: 'Contesté', classes: 'bg-rose-50 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300', point: '#e11d48' },
+  brouillon: { libelle: 'Brouillon', classes: 'bg-muted text-muted-foreground', point: '#71717a' },
 };
 
 const LIBELLES: Record<string, string> = {
@@ -60,3 +60,23 @@ export const CATEGORIES: Record<string, string> = {
 };
 
 export const DOCUMENTS = ['carte_grise', 'visite_technique', 'assurance', 'cni', 'permis', 'autre_document'] as const;
+
+export const ROLES: Record<string, string> = { administrateur: 'Administrateur', agent: 'Agent', assureur: 'Assureur' };
+
+/** 30 derniers jours complets, y compris les jours sans dossier. */
+export function serie30Jours(parJour: { jour: string; n: number }[]) {
+  const map = new Map(parJour.map((j) => [j.jour, j.n]));
+  return Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (29 - i));
+    const jour = d.toISOString().slice(0, 10);
+    return { jour, libelle: dateCourte(jour), n: map.get(jour) ?? 0 };
+  });
+}
+
+/** « il y a 3 h », « il y a 2 j ». */
+export function depuis(d: string | null | undefined) {
+  if (!d) return '—';
+  const h = (Date.now() - new Date(d).getTime()) / 3_600_000;
+  return h < 1 / 60 ? 'à l’instant' : `il y a ${duree(h)}`;
+}

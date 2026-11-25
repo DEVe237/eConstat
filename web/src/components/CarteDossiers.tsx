@@ -43,5 +43,5 @@ export default function CarteDossiers({ points, zones }: { points: Statistiques[
     };
   }, [points, zones, router]);
 
-  return <div ref={ref} className="h-[420px] w-full overflow-hidden rounded-xl" />;
+  return <div ref={ref} className="h-[420px] w-full overflow-hidden rounded-md" />;
 }

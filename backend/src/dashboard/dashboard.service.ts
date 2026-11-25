@@ -105,7 +105,8 @@ export class DashboardService {
       lat: d.lat,
       lng: d.lng,
       conditionsMeteo: d.conditionsMeteo,
-      vehicules: d.vehiculesImpliques.map((v) => ({ conducteurNom: v.conducteurNom, plaque: v.plaque, marque: v.marque })),
+      // Le premier véhicule saisi est A, comme dans le détail.
+      vehicules: [...d.vehiculesImpliques].sort((a, b) => a.dateAjout.getTime() - b.dateAjout.getTime()).map((v) => ({ conducteurNom: v.conducteurNom, plaque: v.plaque, marque: v.marque })),
     }));
     return { items, total, page, limite };
   }

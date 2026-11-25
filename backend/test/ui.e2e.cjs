@@ -78,10 +78,10 @@ const cliquerTexte = async (page, texte) => {
   // --- agent
   const p = await nouvellePage();
   await connexion(p, `ui.agent.${stamp}@test.local`, `Agent-${stamp}`);
-  check(p.url().endsWith('/dossiers'), 'agent connecté → liste des dossiers');
+  check(await attendre(p, () => location.pathname === '/tableau-de-bord' && document.body.innerText.includes('Paul Essomba') && document.body.innerText.includes('Derniers dossiers à traiter')), 'agent connecté → tableau de bord');
   const stockage = await p.evaluate(() => JSON.stringify(localStorage) + document.cookie);
   check(!/eyJ/.test(stockage), 'aucun jeton accessible au JavaScript (cookie httpOnly)');
-  check(await attendre(p, () => /\d+/.test([...document.querySelectorAll('aside a')][0]?.textContent ?? '')), 'badge « dossiers à traiter » dans le menu');
+  check(await attendre(p, () => /\d+/.test([...document.querySelectorAll('aside a')].find((a) => a.textContent.startsWith('Dossiers'))?.textContent ?? '')), 'badge « dossiers à traiter » dans le menu');
   await p.goto(`${WEB}/dossiers/${d.id}`, { waitUntil: 'networkidle0' });
   await pause(3000);
   const scene = await p.evaluate(() => document.querySelector('iframe')?.getAttribute('src') ?? '');
@@ -125,7 +125,15 @@ const cliquerTexte = async (page, texte) => {
   await p.type('#justification', 'Déclarations et témoignage concordants.');
   await cliquerTexte(p, 'Valider le dossier');
   check(await attendre(p, () => document.body.innerText.includes('Validé par Paul Essomba') && document.body.innerText.includes('Conclusion : conducteur B responsable (0 % / 100 %), le conducteur A a raison') && !document.querySelector('[role=radiogroup]')), 'validation avec conclusion depuis l’interface');
-  check(await p.evaluate(() => document.body.innerText.includes('Pièces justificatives')), 'pièces justificatives affichées');
+  await p.evaluate(() => [...document.querySelectorAll('[role=tab]')].find((x) => x.textContent.includes('Photos et pièces')).click());
+  check(await attendre(p, () => document.body.innerText.includes('Pièces justificatives')), 'pièces justificatives affichées');
+  await p.keyboard.down('Control');
+  await p.keyboard.press('k');
+  await p.keyboard.up('Control');
+  await p.waitForSelector('[role=dialog] input');
+  await p.type('[role=dialog] input', d.id.slice(0, 8));
+  check(await attendre(p, (n) => document.querySelector('[role=dialog]')?.innerText.includes(n), `#${d.id.slice(0, 8).toUpperCase()}`), 'recherche globale (Ctrl K)');
+  await p.keyboard.press('Escape');
   check(await p.evaluate(() => document.body.innerText.includes('Horodatage certifié le')), 'horodatage certifié affiché');
 
   await p.goto(`${WEB}/compte`, { waitUntil: 'networkidle0' });
@@ -145,10 +153,14 @@ const cliquerTexte = async (page, texte) => {
   await q.goto(`${WEB}/statistiques`, { waitUntil: 'networkidle0' });
   await pause(1000);
   check(q.url().endsWith('/dossiers'), 'assureur : /statistiques redirige vers ses dossiers');
+  await q.goto(`${WEB}/tableau-de-bord`, { waitUntil: 'networkidle0' });
+  check(await attendre(q, () => location.pathname === '/dossiers'), 'assureur : pas de tableau de bord des autorités');
 
   // --- déconnexion
   await p.goto(`${WEB}/dossiers`, { waitUntil: 'networkidle0' });
   await cliquerTexte(p, 'Se déconnecter');
+  await p.waitForSelector('[role=dialog]');
+  await cliquerTexte(p, 'Oui, me déconnecter');
   await pause(1500);
   await p.goto(`${WEB}/dossiers`, { waitUntil: 'networkidle0' });
   await pause(1500);

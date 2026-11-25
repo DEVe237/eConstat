@@ -208,6 +208,7 @@ check((await call(`/dossiers/${id}/simulation3d/scene`)).status === 403, 'scène
 // --- dashboard agent --------------------------------------------------------------
 const liste = await call('/dashboard/dossiers?statut=transmis', { token: tG });
 const numero = liste.data.items.find((x) => x.id === id)?.numero;
+check(liste.data.items.find((x) => x.id === id)?.vehicules[0]?.conducteurNom === 'Tamtampion', 'liste : A puis B, comme dans le détail');
 check(!!numero, `dossier ${numero} dans « À traiter »`);
 check((await call(`/dashboard/dossiers?q=${encodeURIComponent('CC-456')}`, { token: tG })).data.items.some((x) => x.id === id), 'recherche par plaque');
 check((await call(`/dashboard/dossiers?lat=3.8669&lng=11.5168&rayonKm=1`, { token: tG })).data.items.some((x) => x.id === id), 'filtre par zone');

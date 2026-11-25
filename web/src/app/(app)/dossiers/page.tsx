@@ -1,19 +1,18 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Clock, FileText, Layers, MapPin, RefreshCw, RotateCcw, Search, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Bouton, Carte, Chargement, Erreur, inputCls, StatutBadge, Vide } from '@/components/ui';
+import { TableDossiers } from '@/components/TableDossiers';
+import { Bouton, Carte, EntetePage, Erreur, inputCls, Onglets, Pastille, Squelette, Vide } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { dateHeure, libelle } from '@/lib/format';
 import type { ListeDossiers, Statut } from '@/lib/types';
 
-const ONGLETS: { valeur: '' | Statut; libelle: string }[] = [
-  { valeur: 'transmis', libelle: 'À traiter' },
-  { valeur: 'valide', libelle: 'Validés' },
-  { valeur: 'conteste', libelle: 'Contestés' },
-  { valeur: '', libelle: 'Tous' },
+const ONGLETS: { valeur: '' | Statut; libelle: string; Icone: LucideIcon }[] = [
+  { valeur: 'transmis', libelle: 'À traiter', Icone: Clock },
+  { valeur: 'valide', libelle: 'Validés', Icone: CheckCircle2 },
+  { valeur: 'conteste', libelle: 'Contestés', Icone: TriangleAlert },
+  { valeur: '', libelle: 'Tous', Icone: Layers },
 ];
 
 interface Filtres {
@@ -25,15 +24,22 @@ interface Filtres {
   lng: string;
   rayonKm: string;
   page: number;
+  limite: number;
 }
 
-const FILTRES_INITIAUX: Filtres = { statut: 'transmis', q: '', du: '', au: '', lat: '', lng: '', rayonKm: '', page: 1 };
+const FILTRES_INITIAUX: Filtres = { statut: 'transmis', q: '', du: '', au: '', lat: '', lng: '', rayonKm: '', page: 1, limite: 15 };
+
+/** Onglet demandé par l’adresse (?statut=valide, ?statut=tous), sinon « À traiter ». */
+function statutInitial(autorite: boolean): '' | Statut {
+  const demande = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('statut');
+  if (demande === 'valide' || demande === 'conteste' || demande === 'transmis') return demande;
+  // Les assureurs consultent tous les dossiers qui leur ont été transmis, quel que soit leur statut.
+  return demande === 'tous' || !autorite ? '' : 'transmis';
+}
 
 export default function PageDossiers() {
-  const router = useRouter();
   const { autorite } = useAuth();
-  // Les assureurs consultent tous les dossiers qui leur ont été transmis, quel que soit leur statut.
-  const [filtres, setFiltres] = useState<Filtres>(() => ({ ...FILTRES_INITIAUX, statut: autorite ? 'transmis' : '' }));
+  const [filtres, setFiltres] = useState<Filtres>(() => ({ ...FILTRES_INITIAUX, statut: statutInitial(autorite) }));
   const [recherche, setRecherche] = useState('');
   const [zoneOuverte, setZoneOuverte] = useState(false);
   const [donnees, setDonnees] = useState<ListeDossiers | null>(null);
@@ -43,7 +49,7 @@ export default function PageDossiers() {
   const charger = useCallback(async (f: Filtres) => {
     setChargement(true);
     setErreur(null);
-    const p = new URLSearchParams({ page: String(f.page), limite: '15' });
+    const p = new URLSearchParams({ page: String(f.page), limite: String(f.limite) });
     if (f.statut) p.set('statut', f.statut);
     if (f.q) p.set('q', f.q);
     if (f.du) p.set('du', new Date(`${f.du}T00:00:00`).toISOString());
@@ -75,103 +81,73 @@ export default function PageDossiers() {
   const maj = (partiel: Partial<Filtres>) => setFiltres((f) => ({ ...f, ...partiel, page: partiel.page ?? 1 }));
   const pages = donnees ? Math.max(1, Math.ceil(donnees.total / donnees.limite)) : 1;
 
+  const filtre = !!(filtres.q || filtres.du || filtres.au || filtres.lat || filtres.lng || filtres.rayonKm);
+  const effacer = () => {
+    setRecherche('');
+    maj({ q: '', du: '', au: '', lat: '', lng: '', rayonKm: '' });
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dossiers de constat</h1>
-          <p className="mt-1 text-sm text-zinc-500">{autorite ? 'Constats transmis par les conducteurs via l’application mobile.' : 'Constats transmis à votre compagnie par les autorités.'}</p>
-        </div>
-        <Bouton variante="secondaire" onClick={() => charger(filtres)}>Actualiser</Bouton>
-      </div>
+    <div className="space-y-4">
+      <EntetePage
+        titre="Dossiers de constat"
+        Icone={FileText}
+        description={autorite ? 'Constats transmis par les conducteurs via l’application mobile.' : 'Constats transmis à votre compagnie par les autorités.'}
+        pastille={donnees && <Pastille ton="primaire">{donnees.total} dossier{donnees.total > 1 ? 's' : ''}</Pastille>}
+      >
+        <Bouton variante="secondaire" onClick={() => charger(filtres)}><RefreshCw className={chargement ? 'animate-spin' : ''} /> Actualiser</Bouton>
+      </EntetePage>
 
-      <div className="flex flex-wrap gap-2">
-        {ONGLETS.map((o) => (
-          <button
-            key={o.libelle}
-            onClick={() => maj({ statut: o.valeur })}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${filtres.statut === o.valeur ? 'bg-brand-700 text-white shadow' : 'bg-white text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50'}`}
-          >
-            {o.libelle}
-          </button>
-        ))}
-      </div>
-
-      <Carte>
-        <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto]">
-          <input className={inputCls} placeholder="Rechercher : plaque, conducteur ou n° de dossier (#02EC6023)" value={recherche} onChange={(e) => setRecherche(e.target.value)} />
-          <input className={inputCls} type="date" aria-label="Du" value={filtres.du} onChange={(e) => maj({ du: e.target.value })} />
-          <input className={inputCls} type="date" aria-label="Au" value={filtres.au} onChange={(e) => maj({ au: e.target.value })} />
-          <Bouton variante="secondaire" onClick={() => setZoneOuverte((z) => !z)}>{zoneOuverte ? 'Masquer la zone' : 'Filtrer par zone'}</Bouton>
-        </div>
-        {zoneOuverte && (
-          <div className="mt-3 grid gap-3 border-t border-zinc-100 pt-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-            <input className={inputCls} placeholder="Latitude (ex. 3.8667)" inputMode="decimal" value={filtres.lat} onChange={(e) => maj({ lat: e.target.value })} />
-            <input className={inputCls} placeholder="Longitude (ex. 11.5167)" inputMode="decimal" value={filtres.lng} onChange={(e) => maj({ lng: e.target.value })} />
-            <input className={inputCls} placeholder="Rayon (km)" inputMode="decimal" value={filtres.rayonKm} onChange={(e) => maj({ rayonKm: e.target.value })} />
-            <Bouton variante="secondaire" onClick={() => maj({ lat: '', lng: '', rayonKm: '' })}>Effacer</Bouton>
-          </div>
-        )}
-      </Carte>
+      <Onglets label="Statut des dossiers" valeur={filtres.statut} options={ONGLETS} onChange={(statut) => maj({ statut })} />
 
       {erreur && <Erreur message={erreur} />}
 
-      <Carte className="overflow-hidden p-0">
-        {chargement && !donnees ? (
-          <div className="px-5"><Chargement /></div>
-        ) : !donnees || donnees.items.length === 0 ? (
-          <Vide titre="Aucun dossier" texte="Aucun constat ne correspond à ces filtres." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Dossier</th>
-                  <th className="px-5 py-3 font-semibold">Accident</th>
-                  <th className="px-5 py-3 font-semibold">Véhicules</th>
-                  <th className="px-5 py-3 font-semibold">Météo</th>
-                  <th className="px-5 py-3 font-semibold">Transmis le</th>
-                  <th className="px-5 py-3 font-semibold">Statut</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y divide-zinc-100 ${chargement ? 'opacity-60' : ''}`}>
-                {donnees.items.map((d) => (
-                  <tr key={d.id} className="cursor-pointer transition hover:bg-brand-50/60" onClick={() => router.push(`/dossiers/${d.id}`)}>
-                    <td className="px-5 py-4">
-                      <Link href={`/dossiers/${d.id}`} className="font-bold text-brand-800" onClick={(e) => e.stopPropagation()}>{d.numero}</Link>
-                    </td>
-                    <td className="px-5 py-4 text-zinc-700">{dateHeure(d.dateAccident)}</td>
-                    <td className="px-5 py-4">
-                      {d.vehicules.length === 0 ? (
-                        <span className="text-zinc-400">—</span>
-                      ) : (
-                        <div className="space-y-1">
-                          {d.vehicules.map((v, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <span className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-bold text-white ${i === 0 ? 'bg-vehA' : 'bg-vehB'}`}>{String.fromCharCode(65 + i)}</span>
-                              <span className="font-medium">{v.plaque}</span>
-                              <span className="text-zinc-500">{v.conducteurNom}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 text-zinc-600">{libelle(d.conditionsMeteo)}</td>
-                    <td className="px-5 py-4 text-zinc-600">{dateHeure(d.dateTransmission)}</td>
-                    <td className="px-5 py-4"><StatutBadge statut={d.statut} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <Carte>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-60 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input className={`${inputCls} h-9 pl-9`} aria-label="Rechercher" placeholder="Plaque, conducteur ou n° de dossier (#02EC6023)" value={recherche} onChange={(e) => setRecherche(e.target.value)} />
+          </div>
+          <input className={`${inputCls} h-9 max-w-40`} type="date" aria-label="Du" value={filtres.du} onChange={(e) => maj({ du: e.target.value })} />
+          <input className={`${inputCls} h-9 max-w-40`} type="date" aria-label="Au" value={filtres.au} onChange={(e) => maj({ au: e.target.value })} />
+          <Bouton variante="secondaire" aria-expanded={zoneOuverte} className={zoneOuverte ? '' : 'border-dashed'} onClick={() => setZoneOuverte((z) => !z)}><MapPin /> Zone</Bouton>
+          {filtre && <Bouton variante="fantome" onClick={effacer}><RotateCcw /> Réinitialiser</Bouton>}
+        </div>
+        {zoneOuverte && (
+          <div className="mb-4 grid gap-2 rounded-md bg-muted/50 p-3 sm:grid-cols-3">
+            <input className={inputCls} aria-label="Latitude" placeholder="Latitude (ex. 3.8667)" inputMode="decimal" value={filtres.lat} onChange={(e) => maj({ lat: e.target.value })} />
+            <input className={inputCls} aria-label="Longitude" placeholder="Longitude (ex. 11.5167)" inputMode="decimal" value={filtres.lng} onChange={(e) => maj({ lng: e.target.value })} />
+            <input className={inputCls} aria-label="Rayon en kilomètres" placeholder="Rayon (km)" inputMode="decimal" value={filtres.rayonKm} onChange={(e) => maj({ rayonKm: e.target.value })} />
           </div>
         )}
+
+        {chargement && !donnees ? (
+          <div className="space-y-2" role="status" aria-label="Chargement">{[0, 1, 2, 3, 4].map((i) => <Squelette key={i} className="h-14" />)}</div>
+        ) : !donnees || donnees.items.length === 0 ? (
+          <Vide titre="Aucun dossier" texte={filtre ? 'Aucun constat ne correspond à ces filtres.' : 'Aucun constat dans cette catégorie.'}>
+            {filtre && <Bouton variante="secondaire" onClick={effacer}><RotateCcw /> Réinitialiser les filtres</Bouton>}
+          </Vide>
+        ) : (
+          <TableDossiers items={donnees.items} attenue={chargement} />
+        )}
+
         {donnees && donnees.total > 0 && (
-          <div className="flex items-center justify-between border-t border-zinc-100 px-5 py-3 text-sm text-zinc-500">
-            <span>{donnees.total} dossier{donnees.total > 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-2">
-              <Bouton variante="secondaire" className="px-3 py-1.5" disabled={filtres.page <= 1} onClick={() => maj({ page: filtres.page - 1 })}>Précédent</Bouton>
-              <span>Page {filtres.page} / {pages}</span>
-              <Bouton variante="secondaire" className="px-3 py-1.5" disabled={filtres.page >= pages} onClick={() => maj({ page: filtres.page + 1 })}>Suivant</Bouton>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">{donnees.total} dossier{donnees.total > 1 ? 's' : ''}</span>
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 font-medium">
+                Lignes par page
+                <select className={`${inputCls} h-8 py-0`} value={filtres.limite} onChange={(e) => maj({ limite: Number(e.target.value) })}>
+                  {[10, 15, 30, 50].map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </label>
+              <span className="font-medium">Page {filtres.page} sur {pages}</span>
+              <div className="flex gap-1.5">
+                <Bouton taille="sm" variante="secondaire" aria-label="Première page" disabled={filtres.page <= 1} onClick={() => maj({ page: 1 })}><ChevronsLeft /></Bouton>
+                <Bouton taille="sm" variante="secondaire" aria-label="Page précédente" disabled={filtres.page <= 1} onClick={() => maj({ page: filtres.page - 1 })}><ChevronLeft /></Bouton>
+                <Bouton taille="sm" variante="secondaire" aria-label="Page suivante" disabled={filtres.page >= pages} onClick={() => maj({ page: filtres.page + 1 })}><ChevronRight /></Bouton>
+                <Bouton taille="sm" variante="secondaire" aria-label="Dernière page" disabled={filtres.page >= pages} onClick={() => maj({ page: pages })}><ChevronsRight /></Bouton>
+              </div>
             </div>
           </div>
         )}

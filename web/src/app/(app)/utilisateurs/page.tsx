@@ -1,14 +1,14 @@
 'use client';
 
+import { Building2, KeyRound, Search, Shield, ShieldCheck, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { Bouton, Carte, Champ, Chargement, Erreur, inputCls, Modale, Vide } from '@/components/ui';
+import { Avatar, Bouton, Carte, Champ, EntetePage, Erreur, GrilleStats, inputCls, Modale, Pastille, Squelette, Succes, Vide } from '@/components/ui';
 import { api, type Utilisateur } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { dateHeure } from '@/lib/format';
+import { dateHeure, ROLES } from '@/lib/format';
 
 const VIDE = { prenom: '', nom: '', email: '', motDePasse: '', role: 'agent' as 'agent' | 'administrateur' | 'assureur', telephone: '', matricule: '', unite: '', compagnie: '' };
-const LIBELLE_ROLE: Record<string, string> = { administrateur: 'Administrateur', agent: 'Agent', assureur: 'Assureur' };
 
 export default function PageUtilisateurs() {
   const { user } = useAuth();
@@ -22,6 +22,7 @@ export default function PageUtilisateurs() {
   const [reinit, setReinit] = useState<Utilisateur | null>(null);
   const [nouveauMdp, setNouveauMdp] = useState('');
   const [info, setInfo] = useState<string | null>(null);
+  const [recherche, setRecherche] = useState('');
 
   const charger = useCallback(async () => {
     try {
@@ -81,61 +82,90 @@ export default function PageUtilisateurs() {
 
   const champ = (k: keyof typeof VIDE) => ({ value: form[k], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value }) });
 
+  const compte = (role: string) => liste?.filter((u) => u.role === role).length ?? 0;
+  const q = recherche.trim().toLowerCase();
+  const visibles = (liste ?? []).filter((u) => [u.prenom, u.nom, u.email, u.matricule, u.unite, u.compagnie, ROLES[u.role]].join(' ').toLowerCase().includes(q));
+  const ouvrirCreation = () => {
+    setErreurForm(null);
+    setOuvert(true);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Comptes</h1>
-          <p className="mt-1 text-sm text-zinc-500">Agents des forces de l’ordre, assureurs et administrateurs ayant accès au dashboard.</p>
-        </div>
-        <Bouton onClick={() => setOuvert(true)}>Nouveau compte</Bouton>
-      </div>
+    <div className="space-y-4">
+      <EntetePage
+        titre="Comptes"
+        Icone={Users}
+        description="Agents des forces de l’ordre, assureurs et administrateurs ayant accès au dashboard."
+        pastille={liste && <Pastille ton="primaire">{liste.length} compte{liste.length > 1 ? 's' : ''}</Pastille>}
+      >
+        <Bouton onClick={ouvrirCreation}><UserPlus /> Nouveau compte</Bouton>
+      </EntetePage>
 
       {erreur && <Erreur message={erreur} />}
-      {info && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{info}</div>}
+      {info && <Succes message={info} />}
 
-      <Carte className="overflow-hidden p-0">
+      {liste && (
+        <GrilleStats
+          stats={[
+            { titre: 'Agents', valeur: compte('agent'), sous: 'Traitent les dossiers', Icone: Shield, teinte: 'bleu' },
+            { titre: 'Assureurs', valeur: compte('assureur'), sous: 'Consultation seule', Icone: Building2, teinte: 'vert' },
+            { titre: 'Administrateurs', valeur: compte('administrateur'), sous: 'Gèrent aussi les comptes', Icone: ShieldCheck, teinte: 'violet' },
+            { titre: 'Désactivés', valeur: liste.filter((u) => u.actif === false).length, sous: 'Accès coupé', Icone: UserX, teinte: 'rouge' },
+          ]}
+        />
+      )}
+
+      <Carte titre="Liste des comptes" description="Créer, désactiver ou réinitialiser un accès" Icone={Users}>
+        <div className="relative mb-4 max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <input className={`${inputCls} h-9 pl-9`} aria-label="Rechercher un compte" placeholder="Rechercher un compte…" value={recherche} onChange={(e) => setRecherche(e.target.value)} />
+        </div>
         {!liste ? (
-          <div className="px-5"><Chargement /></div>
-        ) : liste.length === 0 ? (
-          <Vide titre="Aucun compte" />
+          <div className="space-y-2" role="status" aria-label="Chargement">{[0, 1, 2, 3].map((i) => <Squelette key={i} className="h-14" />)}</div>
+        ) : visibles.length === 0 ? (
+          <Vide titre="Aucun compte" texte={q ? 'Aucun compte ne correspond à cette recherche.' : undefined} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Nom</th>
-                  <th className="px-5 py-3 font-semibold">Rôle</th>
-                  <th className="px-5 py-3 font-semibold">Matricule · unité / compagnie</th>
-                  <th className="px-5 py-3 font-semibold">Créé le</th>
-                  <th className="px-5 py-3 font-semibold">Accès</th>
+              <thead className="bg-muted/50">
+                <tr className="border-b [&>th]:h-10 [&>th]:whitespace-nowrap [&>th]:px-3 [&>th]:font-medium">
+                  <th>Nom</th>
+                  <th>Rôle</th>
+                  <th>Matricule · unité / compagnie</th>
+                  <th>Créé le</th>
+                  <th>Accès</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {liste.map((u) => {
+              <tbody>
+                {visibles.map((u) => {
                   const actif = u.actif ?? true;
                   return (
-                    <tr key={u.id}>
-                      <td className="px-5 py-4">
-                        <p className="font-semibold">{u.prenom} {u.nom}</p>
-                        <p className="text-xs text-zinc-500">{u.email}</p>
+                    <tr key={u.id} className="border-b transition last:border-0 hover:bg-primary-soft/40 [&>td]:px-3 [&>td]:py-2.5">
+                      <td>
+                        <div className={`flex items-center gap-3 ${actif ? '' : 'opacity-60'}`}>
+                          <Avatar nom={`${u.prenom} ${u.nom}`} />
+                          <div className="min-w-0">
+                            <p className="font-semibold">{u.prenom} {u.nom}</p>
+                            <p className="text-xs text-muted-foreground">{u.email}</p>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-5 py-4">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.role === 'administrateur' ? 'bg-brand-100 text-brand-800' : u.role === 'assureur' ? 'bg-indigo-50 text-indigo-800' : 'bg-zinc-100 text-zinc-700'}`}>
-                          {LIBELLE_ROLE[u.role] ?? u.role}
-                        </span>
-                        {u.actif === false && <span className="ml-2 text-xs font-semibold text-rose-600">désactivé</span>}
+                      <td>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Pastille ton={u.role === 'administrateur' ? 'primaire' : u.role === 'assureur' ? 'vert' : 'bleu'}>{ROLES[u.role] ?? u.role}</Pastille>
+                          {!actif && <Pastille ton="rouge">Désactivé</Pastille>}
+                        </div>
                       </td>
-                      <td className="px-5 py-4 text-zinc-600">{(u.role === 'assureur' ? u.compagnie : [u.matricule, u.unite].filter(Boolean).join(' · ')) || '—'}</td>
-                      <td className="px-5 py-4 text-zinc-600">{dateHeure(u.dateCreation)}</td>
-                      <td className="px-5 py-4">
+                      <td className="text-muted-foreground">{(u.role === 'assureur' ? u.compagnie : [u.matricule, u.unite].filter(Boolean).join(' · ')) || '—'}</td>
+                      <td className="whitespace-nowrap text-muted-foreground">{dateHeure(u.dateCreation)}</td>
+                      <td>
                         {u.id === user?.id ? (
-                          <span className="text-xs text-zinc-400">Vous</span>
+                          <Pastille>Vous</Pastille>
                         ) : (
                           <div className="flex gap-2">
-                            <Bouton variante="secondaire" className="px-3 py-1.5 text-xs" onClick={() => { setErreurForm(null); setReinit(u); }}>Mot de passe</Bouton>
-                            <Bouton variante={actif ? 'secondaire' : 'succes'} className="px-3 py-1.5 text-xs" onClick={() => basculer(u)}>
-                              {actif ? 'Désactiver' : 'Réactiver'}
+                            <Bouton taille="sm" variante="secondaire" onClick={() => { setErreurForm(null); setReinit(u); }}><KeyRound /> Mot de passe</Bouton>
+                            <Bouton taille="sm" variante={actif ? 'danger' : 'succes'} onClick={() => basculer(u)}>
+                              {actif ? <><UserX /> Désactiver</> : <><UserCheck /> Réactiver</>}
                             </Bouton>
                           </div>
                         )}
@@ -150,7 +180,7 @@ export default function PageUtilisateurs() {
       </Carte>
 
       <Modale ouvert={reinit !== null} titre={`Réinitialiser le mot de passe${reinit ? ` de ${reinit.prenom} ${reinit.nom}` : ''}`} onFermer={() => !envoi && setReinit(null)}>
-        <form onSubmit={reinitialiser} className="space-y-3">
+        <form onSubmit={reinitialiser} className="space-y-4">
           <Champ label="Nouveau mot de passe provisoire (8 caractères minimum)">
             <input className={inputCls} type="password" minLength={8} required autoComplete="new-password" value={nouveauMdp} onChange={(e) => setNouveauMdp(e.target.value)} />
           </Champ>
@@ -163,7 +193,7 @@ export default function PageUtilisateurs() {
       </Modale>
 
       <Modale ouvert={ouvert} titre="Nouveau compte" onFermer={() => !envoi && setOuvert(false)}>
-        <form onSubmit={creer} className="space-y-3">
+        <form onSubmit={creer} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Champ label="Prénom"><input className={inputCls} required {...champ('prenom')} /></Champ>
             <Champ label="Nom"><input className={inputCls} required {...champ('nom')} /></Champ>
