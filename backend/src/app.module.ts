@@ -11,6 +11,7 @@ import { CommonModule } from './common/common.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DossiersModule } from './dossiers/dossiers.module';
 import { Simulation3dModule } from './simulation3d/simulation3d.module';
+import { MIGRATIONS } from './migrations';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -22,9 +23,13 @@ import { UsersModule } from './users/users.module';
       useFactory: (config: ConfigService) => ({
         ...connexionPostgres(config),
         autoLoadEntities: true,
-        // Projet en phase de conception : pas encore de migrations, le schéma
-        // est synchronisé directement depuis les entités TypeORM.
-        synchronize: true,
+        // Le schéma n'évolue que par les migrations, appliquées au démarrage de l'API.
+        // Jamais de synchronisation automatique : une ancienne version relancée
+        // supprimerait les colonnes qu'elle ne connaît pas, avec leurs données.
+        synchronize: false,
+        migrations: MIGRATIONS,
+        migrationsRun: true,
+        migrationsTransactionMode: 'all' as const,
       }),
     }),
     BullModule.forRootAsync({

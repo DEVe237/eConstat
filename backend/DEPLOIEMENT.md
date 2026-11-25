@@ -62,9 +62,12 @@ sauvegarder aussi `camaircost_uploads`.
 
 ## 5. Points d'attention avant d'ouvrir au public
 
-- **Schéma de base de données** : l'API le synchronise automatiquement depuis le code (`synchronize: true`).
-  C'est pratique en phase de conception, mais avant d'avoir des données réelles il faut passer à des
-  migrations TypeORM pour maîtriser chaque modification.
+- **Schéma de base de données** : il n'évolue que par les migrations (`src/migrations`), appliquées au démarrage
+  de l'API. Pour le modifier : changer l'entité, `npm run migration:generer src/migrations/NomDuChangement`, relire
+  le SQL, ajouter la classe à `src/migrations/index.ts`. `npm run migration:verifier` affiche l'écart entre le code
+  et la base. Sauvegarder la base avant toute migration qui supprime ou renomme.
+- **Retour en arrière** : ne jamais redéployer une version antérieure aux migrations (elle synchronisait le schéma
+  et supprimerait les colonnes récentes avec leurs données).
 - **Valeur légale** : la reconnaissance juridique du constat numérique et de la signature électronique
   dépend de la réglementation camerounaise (cahier des charges §9.1). Faire valider le format du PDF exporté
   et le choix de l'autorité d'horodatage avant usage officiel.

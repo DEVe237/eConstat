@@ -19,8 +19,7 @@ import { Simulation3dWorkerModule } from './simulation3d/simulation3d-worker.mod
       useFactory: (config: ConfigService) => ({
         ...connexionPostgres(config),
         autoLoadEntities: true,
-        // Seule l'API fait évoluer le schéma : un worker resté sur une ancienne
-        // version supprimerait sinon les colonnes qu'il ne connaît pas encore.
+        // Seule l'API fait évoluer le schéma (migrations).
         synchronize: false,
       }),
     }),
