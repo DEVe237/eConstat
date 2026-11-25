@@ -126,6 +126,12 @@ class DossiersRepository {
     return Map<String, dynamic>.from(reponse.data as Map);
   }
 
+  /// Avancement du traitement par les autorités (léger : relu toutes les quelques secondes).
+  Future<Map<String, dynamic>> suivi(String dossierId) async {
+    final reponse = await _api.dio.get('/dossiers/$dossierId/suivi');
+    return Map<String, dynamic>.from(reponse.data as Map);
+  }
+
   Future<String> _creerDossier(ConstatDraft draft) async {
     final reponse = await _api.dio.post('/dossiers', data: _circonstances(draft));
     return (reponse.data as Map<String, dynamic>)['id'] as String;

@@ -216,6 +216,14 @@ check(det.status === 200 && det.data.vehiculesImpliques.length === 2 && det.data
 check(det.data.vehiculesImpliques[0].conducteurNom === 'Tamtampion', 'véhicules dans l’ordre de saisie (A puis B)');
 check(det.data.medias[0].url.startsWith('/fichiers/') && det.data.sceneUrl.includes('sig=') && !('horodatageJeton' in det.data), 'détail : liens signés, jeton brut non exposé');
 
+const tEtapes = async () => (await call(`/dossiers/${id}/suivi`, { token: tU })).data;
+check((await tEtapes()).statut === 'transmis' && !(await tEtapes()).enTraitement, 'suivi conducteur : transmis, pas encore pris en charge');
+check((await call(`/dossiers/${id}/suivi`, { token: tS })).status === 404, 'suivi d’un autre refusé');
+check((await call(`/dashboard/dossiers/${id}/prendre-en-charge`, { method: 'POST', token: tS })).status === 403, 'prise en charge réservée aux autorités');
+await call(`/dashboard/dossiers/${id}/prendre-en-charge`, { method: 'POST', token: tG });
+check((await call(`/dashboard/dossiers/${id}/prendre-en-charge`, { method: 'POST', token: tG })).data.evenements.filter((e) => e.type === 'prise_en_charge').length === 1, 'prise en charge enregistrée une seule fois');
+check((await tEtapes()).enTraitement && (await call('/dossiers', { token: tU })).data.find((x) => x.id === id)?.enTraitement === true, 'suivi conducteur : en traitement');
+
 const tem = await call(`/dashboard/dossiers/${id}/temoignages`, { method: 'POST', token: tG, json: { temoinNom: 'Jean Mballa', temoinTelephone: '699000000', recit: 'J’ai vu le véhicule B tourner à gauche sans céder le passage.' } });
 check(tem.status === 201 && tem.data.temoignages.length === 1 && tem.data.temoignages[0].recueilliPar === 'Paul Essomba', 'témoignage recueilli par l’agent');
 check((await call(`/dashboard/dossiers/${id}/completer`, { method: 'POST', token: tG, json: { commentaire: 'Chaussée glissante confirmée sur place.' } })).status === 201, 'complément');
@@ -228,12 +236,16 @@ const val = await call(`/dashboard/dossiers/${id}/valider`, { method: 'POST', to
 check(val.status === 201 && val.data.statut === 'valide' && val.data.agentTraitant?.matricule === 'PN-4521', 'validation tracée (matricule)');
 check(val.data.conclusion?.responsabilite === 'partagee' && val.data.conclusion.partResponsabiliteA === 70 && /A 70 % \/ B 30 %/.test(val.data.conclusion.libelle), `conclusion enregistrée : ${val.data.conclusion?.libelle}`);
 
+const sv = await tEtapes();
+check(sv.statut === 'valide' && /B roulait trop vite/.test(sv.etapes.at(-1).commentaire) && !/Chaussée glissante|Mballa/.test(JSON.stringify(sv)), 'suivi conducteur : conclusion visible, remarques et témoins masqués');
+
 // --- assureur ---------------------------------------------------------------------
 check((await call(`/dashboard/dossiers/${id}`, { token: tS })).status === 404, 'assureur : dossier non transmis invisible');
 check(!(await call('/dashboard/dossiers', { token: tS })).data.items.some((x) => x.id === id), 'assureur : liste vide avant transmission');
 check((await call('/dashboard/assureurs', { token: tG })).data.includes(compagnie), 'liste des compagnies');
 check((await call(`/dashboard/dossiers/${id}/transmettre-assureur`, { method: 'POST', token: tG, json: { compagnie: 'Inconnue SA' } })).status === 400, 'compagnie inconnue refusée');
-const tr = await call(`/dashboard/dossiers/${id}/transmettre-assureur`, { method: 'POST', token: tG, json: { compagnie } });
+const tr = await call(`/dashboard/dossiers/${id}/transmettre-assureur`, { method: 'POST', token: tG, json: { compagnie, remarque: '  Vérifier les freins de B.  ' } });
+check(tr.data?.transmissionsAssureurs?.find((t) => t.compagnie === compagnie)?.remarque === 'Vérifier les freins de B.', 'remarque enregistrée avec le transfert');
 check(tr.status === 201 && tr.data.transmissionsAssureurs.length === 1, 'transmission à l’assureur');
 check((await call('/dashboard/dossiers', { token: tS })).data.items.some((x) => x.id === id), 'assureur : dossier visible après transmission');
 check((await call(`/dashboard/dossiers/${id}/valider`, { method: 'POST', token: tS, json: {} })).status === 403, 'assureur en lecture seule');
@@ -242,7 +254,7 @@ check(pdf.status === 200 && pdf.data.subarray(0, 4).toString() === '%PDF', `expo
 if (envv('TSA_URL') && s.data.horodatageDate) check((await call(`/dashboard/dossiers/${id}/horodatage.tsr`, { token: tS })).data.length > 1000, 'preuve d’horodatage téléchargeable (.tsr)');
 
 const hist = (await call(`/dashboard/dossiers/${id}`, { token: tG })).data.evenements.map((e) => e.type).join(',');
-check(hist === 'creation,transmission,temoignage,complement,validation,envoi_assureur', `historique : ${hist}`);
+check(hist === 'creation,transmission,prise_en_charge,temoignage,complement,validation,envoi_assureur', `historique : ${hist}`);
 check((await call('/dashboard/statistiques', { token: tG })).data.points.some((p) => p.id === id), 'statistiques');
 
 // --- comptes ----------------------------------------------------------------------

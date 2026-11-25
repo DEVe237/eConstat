@@ -68,6 +68,12 @@ export class DossiersController {
     return this.dossiersService.findOne(id, req.user);
   }
 
+  /** Avancement du traitement, relu régulièrement par l'application pour un suivi en direct. */
+  @Get(':id/suivi')
+  suivi(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequeteAuth) {
+    return this.dossiersService.suivi(id, req.user);
+  }
+
   /** Complète les circonstances d'un brouillon (le dossier est créé dès la fin de la capture guidée). */
   @Patch(':id')
   mettreAJour(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateDossierDto, @Req() req: RequeteAuth) {

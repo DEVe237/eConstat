@@ -27,6 +27,15 @@ class DossierDetailArgs {
   final String plaque;
 }
 
+/// Clé de traduction et couleur du statut affiché au conducteur.
+(String, Color) etiquetteStatut(String statut, bool enTraitement) => switch (statut) {
+      'transmis' when enTraitement => ('historique_en_traitement', const Color(0xFF6204BF)),
+      'transmis' => ('historique_transmis', const Color(0xFF6B7280)),
+      'valide' => ('historique_valide', const Color(0xFF1E79E8)),
+      'conteste' => ('historique_conteste', const Color(0xFFB60B0B)),
+      _ => ('historique_en_cours', const Color(0xFFE07200)),
+    };
+
 const _categoriesDocument = [
   'carte_grise',
   'visite_technique',
@@ -48,17 +57,36 @@ class DossierDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = AppStrings.of(context).t;
     final detail = ref.watch(dossierDetailProvider(args.dossierId));
+    final suivi = ref.watch(suiviProvider(args.dossierId)).value;
+    ref.listen(suiviProvider(args.dossierId), (avant, apres) {
+      final a = avant?.value;
+      final b = apres.value;
+      if (a == null || b == null) return;
+      final connues = {for (final e in _liste(a['etapes'])) e['id']};
+      final nouvelles = _liste(b['etapes']).where((e) => !connues.contains(e['id'])).toList();
+      if (nouvelles.isEmpty && a['statut'] == b['statut']) return;
+      ref.invalidate(dossierDetailProvider(args.dossierId));
+      ref.invalidate(historiqueProvider);
+      if (nouvelles.isEmpty) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t('suivi_maj').replaceFirst('%s', t('suivi_${nouvelles.last['type']}')))),
+      );
+    });
 
     return Scaffold(
       appBar: AppBar(title: Text(args.titre)),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => ref.refresh(dossierDetailProvider(args.dossierId).future),
+          onRefresh: () {
+            ref.invalidate(suiviProvider(args.dossierId));
+            return ref.refresh(dossierDetailProvider(args.dossierId).future);
+          },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(AppSpacing.page),
             children: [
               ...detail.when(
+                skipError: true,
                 loading: () => [
                   const Padding(
                     padding: EdgeInsets.all(AppSpacing.xxxl),
@@ -78,7 +106,7 @@ class DossierDetailScreen extends ConsumerWidget {
                     ],
                   ),
                 ],
-                data: (d) => _contenu(context, ref, d),
+                data: (d) => _contenu(context, ref, d, suivi),
               ),
               const SizedBox(height: AppSpacing.lg),
               ElevatedButton.icon(
@@ -100,7 +128,7 @@ class DossierDetailScreen extends ConsumerWidget {
     );
   }
 
-  List<Widget> _contenu(BuildContext context, WidgetRef ref, Map<String, dynamic> d) {
+  List<Widget> _contenu(BuildContext context, WidgetRef ref, Map<String, dynamic> d, Map<String, dynamic>? suivi) {
     final t = AppStrings.of(context).t;
     final theme = Theme.of(context);
     final base = ref.read(apiClientProvider).dio.options.baseUrl;
@@ -111,6 +139,11 @@ class DossierDetailScreen extends ConsumerWidget {
     final photos = medias.where((m) => m['type'] == 'photo' && !_categoriesDocument.contains(m['categorie'])).toList();
     final videos = medias.where((m) => m['type'] == 'video').toList();
     final statut = d['statut'] as String? ?? '';
+    final etiquette = suivi == null
+        ? (args.statut, args.statutColor)
+        : switch (etiquetteStatut(suivi['statut'] as String? ?? '', suivi['enTraitement'] == true)) {
+            (final cle, final couleur) => (t(cle), couleur),
+          };
 
     return [
       _Carte(
@@ -121,11 +154,11 @@ class DossierDetailScreen extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
                 decoration: BoxDecoration(
-                  color: args.statutColor,
+                  color: etiquette.$2,
                   borderRadius: BorderRadius.circular(AppRadius.full),
                 ),
                 child: Text(
-                  args.statut,
+                  etiquette.$1,
                   style: theme.textTheme.labelSmall?.copyWith(color: Colors.white),
                 ),
               ),
@@ -139,6 +172,10 @@ class DossierDetailScreen extends ConsumerWidget {
         ],
       ),
       if (statut == 'valide' || statut == 'conteste') _decision(context, d, statut),
+      if (suivi != null && suivi['statut'] != 'brouillon') ...[
+        _Titre(t('suivi_titre')),
+        _Carte(enfants: _etapes(context, suivi)),
+      ],
       _Titre(t('dossier_vehicules')),
       for (final (i, v) in vehicules.indexed)
         _Carte(
@@ -192,6 +229,59 @@ class DossierDetailScreen extends ConsumerWidget {
         ],
       ),
     ];
+  }
+
+  /// Étapes du traitement, la prochaine attendue en dernier.
+  List<Widget> _etapes(BuildContext context, Map<String, dynamic> suivi) {
+    final t = AppStrings.of(context).t;
+    final theme = Theme.of(context);
+    final attente = switch (suivi['statut']) {
+      'valide' => null,
+      'transmis' when suivi['enTraitement'] != true => t('suivi_attente_agent'),
+      _ => t('suivi_attente_decision'),
+    };
+
+    Widget ligne(Widget icone, String titre, String? date) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            children: [
+              SizedBox(width: 22, height: 22, child: Center(child: icone)),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: Text(titre, style: theme.textTheme.bodyMedium)),
+              if (date != null) Text(date, style: theme.textTheme.bodySmall),
+            ],
+          ),
+        );
+
+    return [
+      for (final e in _liste(suivi['etapes']))
+        ligne(
+          Icon(
+            e['type'] == 'contestation' ? Icons.report_outlined : Icons.check_circle,
+            size: 20,
+            color: e['type'] == 'contestation' ? const Color(0xFFB60B0B) : const Color(0xFF007A5E),
+          ),
+          t('suivi_${e['type']}'),
+          _dateCourte(e['date']),
+        ),
+      if (attente != null)
+        ligne(
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+          ),
+          attente,
+          null,
+        ),
+    ];
+  }
+
+  static String? _dateCourte(Object? iso) {
+    final d = iso is String ? DateTime.tryParse(iso)?.toLocal() : null;
+    if (d == null) return null;
+    String deux(int n) => '$n'.padLeft(2, '0');
+    return '${deux(d.day)}/${deux(d.month)} ${deux(d.hour)}:${deux(d.minute)}';
   }
 
   /// Décision de l'agent : conclusion et justification, ou motif de contestation.

@@ -26,7 +26,8 @@ export class LiensSignesService {
 
   /** Paramètres `exp` et `sig` pour `chemin` (sans query string). */
   parametres(chemin: string, ttlSecondes = TTL_DEFAUT): { exp: number; sig: string } {
-    const exp = Math.floor(Date.now() / 1000) + ttlSecondes;
+    // Arrondi à 10 min : relire un dossier redonne les mêmes liens, sans recharger photos et scène 3D.
+    const exp = Math.ceil((Date.now() / 1000 + ttlSecondes) / 600) * 600;
     return { exp, sig: this.signature(chemin, exp) };
   }
 

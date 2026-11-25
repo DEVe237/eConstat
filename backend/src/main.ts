@@ -40,6 +40,10 @@ async function bootstrap() {
   });
 
   await app.listen(process.env.PORT ?? 3000);
+  // Le dashboard réutilise ses connexions : ne pas les fermer avant lui (5 s par défaut).
+  const serveur = app.getHttpServer();
+  serveur.keepAliveTimeout = 65_000;
+  serveur.headersTimeout = 66_000;
   if (process.env.WORKER_INTEGRE === 'true') lancerWorker();
 }
 bootstrap();

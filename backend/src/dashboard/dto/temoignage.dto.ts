@@ -21,4 +21,10 @@ export class TransmissionAssureurDto {
   @IsString()
   @IsNotEmpty()
   compagnie: string;
+
+  /** Remarque de l'agent à l'attention de la compagnie. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  remarque?: string;
 }

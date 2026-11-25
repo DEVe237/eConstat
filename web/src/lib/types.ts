@@ -97,12 +97,13 @@ export interface TransmissionAssureur {
   id: string;
   compagnie: string;
   transmisPar: string | null;
+  remarque: string | null;
   date: string;
 }
 
 export interface Evenement {
   id: string;
-  type: 'creation' | 'transmission' | 'validation' | 'contestation' | 'complement' | 'temoignage' | 'envoi_assureur';
+  type: 'creation' | 'transmission' | 'prise_en_charge' | 'validation' | 'contestation' | 'complement' | 'temoignage' | 'envoi_assureur';
   auteurNom: string | null;
   commentaire: string | null;
   date: string;

@@ -9,29 +9,30 @@ import { useAuth } from '@/lib/auth';
 import { CATEGORIES, dateHeure, DOCUMENTS, libelle } from '@/lib/format';
 import type { AnalyseIA, DossierDetail, Evenement, Media, Responsabilite } from '@/lib/types';
 
-type Action = 'valider' | 'contester' | 'completer';
+type Action = 'contester' | 'completer';
 
-const ACTIONS: Record<Action, { titre: string; bouton: string; variante: 'succes' | 'danger' | 'primaire'; placeholder: string; obligatoire: boolean }> = {
-  valider: { titre: 'Valider le constat : conclusion', bouton: 'Valider avec cette conclusion', variante: 'succes', placeholder: 'Justification de la conclusion (obligatoire) : éléments du dossier, photos, témoignages…', obligatoire: true },
-  contester: { titre: 'Contester le constat', bouton: 'Contester', variante: 'danger', placeholder: 'Motif de la contestation (obligatoire)', obligatoire: true },
-  completer: { titre: 'Ajouter un complément', bouton: 'Enregistrer', variante: 'primaire', placeholder: 'Information complémentaire, constat de l’agent sur place…', obligatoire: true },
+const ACTIONS: Record<Action, { titre: string; bouton: string; variante: 'danger' | 'primaire'; placeholder: string }> = {
+  contester: { titre: 'Contester le constat', bouton: 'Contester', variante: 'danger', placeholder: 'Motif de la contestation (obligatoire)' },
+  completer: { titre: 'Ajouter une remarque au dossier', bouton: 'Enregistrer', variante: 'primaire', placeholder: 'Remarque, information complémentaire, constat de l’agent sur place…' },
 };
 
 const EVT: Record<Evenement['type'], { libelle: string; couleur: string }> = {
   creation: { libelle: 'Dossier créé par le conducteur', couleur: 'bg-zinc-400' },
   transmission: { libelle: 'Transmis aux autorités', couleur: 'bg-brand-600' },
+  prise_en_charge: { libelle: 'Pris en charge', couleur: 'bg-violet-500' },
   validation: { libelle: 'Constat validé', couleur: 'bg-emerald-500' },
   contestation: { libelle: 'Constat contesté', couleur: 'bg-rose-500' },
-  complement: { libelle: 'Complément ajouté', couleur: 'bg-amber-500' },
+  complement: { libelle: 'Remarque ajoutée', couleur: 'bg-amber-500' },
   temoignage: { libelle: 'Témoignage recueilli', couleur: 'bg-sky-500' },
   envoi_assureur: { libelle: 'Transmis à l’assureur', couleur: 'bg-indigo-500' },
 };
 
 const CONCLUSIONS: { valeur: Responsabilite; titre: string; detail: string; classes: string }[] = [
-  { valeur: 'A', titre: 'Conducteur A responsable', detail: 'A 100 % · B 0 %', classes: 'peer-checked:border-vehA peer-checked:bg-violet-50' },
-  { valeur: 'B', titre: 'Conducteur B responsable', detail: 'A 0 % · B 100 %', classes: 'peer-checked:border-vehB peer-checked:bg-orange-50' },
-  { valeur: 'partagee', titre: 'Responsabilité partagée', detail: 'Répartition à préciser', classes: 'peer-checked:border-brand-600 peer-checked:bg-brand-50' },
-  { valeur: 'indeterminee', titre: 'Indéterminée', detail: 'Éléments insuffisants', classes: 'peer-checked:border-zinc-500 peer-checked:bg-zinc-50' },
+  // Donner raison à l’un revient à déclarer l’autre responsable.
+  { valeur: 'B', titre: 'A a raison', detail: 'Conducteur B responsable à 100 %', classes: 'peer-checked:border-vehA peer-checked:bg-violet-50' },
+  { valeur: 'A', titre: 'B a raison', detail: 'Conducteur A responsable à 100 %', classes: 'peer-checked:border-vehB peer-checked:bg-orange-50' },
+  { valeur: 'partagee', titre: 'Torts partagés', detail: 'Répartition à préciser', classes: 'peer-checked:border-brand-600 peer-checked:bg-brand-50' },
+  { valeur: 'indeterminee', titre: 'Impossible à dire', detail: 'Éléments insuffisants', classes: 'peer-checked:border-zinc-500 peer-checked:bg-zinc-50' },
 ];
 
 function Vignette({ m, onOuvrir }: { m: Media; onOuvrir: (url: string) => void }) {
@@ -118,6 +119,9 @@ export default function PageDossier() {
   const [compagnie, setCompagnie] = useState('');
   const [responsabilite, setResponsabilite] = useState<Responsabilite | null>(null);
   const [partA, setPartA] = useState(50);
+  const [justification, setJustification] = useState('');
+  const [erreurDecision, setErreurDecision] = useState<string | null>(null);
+  const [remarqueAssureur, setRemarqueAssureur] = useState('');
   const [analyseEnCours, setAnalyseEnCours] = useState(false);
 
   const charger = useCallback(async () => {
@@ -155,24 +159,49 @@ export default function PageDossier() {
 
   function confirmer() {
     if (!action) return;
-    if (action === 'valider' && !responsabilite) return setErreurAction('Choisissez une conclusion : qui est responsable de l’accident ?');
-    if (ACTIONS[action].obligatoire && !commentaire.trim()) {
-      return setErreurAction(action === 'valider' ? 'La justification de la conclusion est obligatoire.' : 'Ce champ est obligatoire.');
-    }
-    const json: Record<string, unknown> = commentaire.trim() ? { commentaire: commentaire.trim() } : {};
-    if (action === 'valider') {
-      json.responsabilite = responsabilite;
-      if (responsabilite === 'partagee') json.partResponsabiliteA = partA;
-    }
+    if (!commentaire.trim()) return setErreurAction('Ce champ est obligatoire.');
     executer(
-      () => api<DossierDetail>(`/dashboard/dossiers/${id}/${action}`, { method: 'POST', json }),
+      () => api<DossierDetail>(`/dashboard/dossiers/${id}/${action}`, { method: 'POST', json: { commentaire: commentaire.trim() } }),
       () => {
         setAction(null);
         setCommentaire('');
-        setResponsabilite(null);
-        setPartA(50);
       },
     );
+  }
+
+  async function valider() {
+    if (!responsabilite) return setErreurDecision('Indiquez qui a raison avant de valider le dossier.');
+    if (!justification.trim()) return setErreurDecision('Les remarques justifiant la conclusion sont obligatoires.');
+    setErreurDecision(null);
+    setEnvoi(true);
+    try {
+      const json = { commentaire: justification.trim(), responsabilite, ...(responsabilite === 'partagee' ? { partResponsabiliteA: partA } : {}) };
+      setD(await api<DossierDetail>(`/dashboard/dossiers/${id}/valider`, { method: 'POST', json }));
+      setJustification('');
+      setResponsabilite(null);
+      setPartA(50);
+    } catch (e) {
+      setErreurDecision(e instanceof Error ? e.message : 'Validation impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  async function prendreEnCharge() {
+    setEnvoi(true);
+    try {
+      setD(await api<DossierDetail>(`/dashboard/dossiers/${id}/prendre-en-charge`, { method: 'POST' }));
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : 'Prise en charge impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  function ouvrirAction(a: Action) {
+    setErreurAction(null);
+    setCommentaire('');
+    setAction(a);
   }
 
   function enregistrerTemoin(e: React.FormEvent) {
@@ -201,7 +230,11 @@ export default function PageDossier() {
 
   function transmettreAssureur() {
     if (!compagnie) return setErreurAction('Choisissez une compagnie.');
-    executer(() => api<DossierDetail>(`/dashboard/dossiers/${id}/transmettre-assureur`, { method: 'POST', json: { compagnie } }), () => setModaleAssureur(false));
+    executer(() => api<DossierDetail>(`/dashboard/dossiers/${id}/transmettre-assureur`, { method: 'POST', json: { compagnie, ...(remarqueAssureur.trim() ? { remarque: remarqueAssureur.trim() } : {}) } }), () => {
+      setModaleAssureur(false);
+      setRemarqueAssureur('');
+      setCompagnie('');
+    });
   }
 
   async function telechargerFichier(chemin: string, nom: string) {
@@ -248,6 +281,9 @@ export default function PageDossier() {
   const videoPrete = sim?.statut === 'termine' && sim.urlAnimation;
   const mode3d = videoPrete && vue3d === 'video' ? 'video' : 'interactive';
   const num = d.numero.slice(1);
+  // Un dossier validé avant l’ajout des conclusions doit encore pouvoir recevoir la sienne.
+  const priseEnCharge = d.evenements.find((e) => e.type === 'prise_en_charge');
+  const aDecider = autorite && (d.statut !== 'valide' || !d.conclusion);
 
   return (
     <div className="space-y-6">
@@ -260,6 +296,9 @@ export default function PageDossier() {
             <StatutBadge statut={d.statut} />
           </div>
           <p className="mt-1 text-sm text-zinc-500">Accident du {dateHeure(d.dateAccident)} · transmis le {dateHeure(d.dateTransmission)}</p>
+          {d.statut === 'transmis' && priseEnCharge && (
+            <p className="mt-1 text-sm font-semibold text-violet-700">En traitement par {priseEnCharge.auteurNom ?? 'un agent'} depuis le {dateHeure(priseEnCharge.date)}</p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Bouton variante="secondaire" onClick={() => telechargerFichier(`/dashboard/dossiers/${id}/export.pdf`, `constat-${num}.pdf`)} disabled={telechargement !== null}>
@@ -267,11 +306,11 @@ export default function PageDossier() {
           </Bouton>
           {autorite && (
             <>
+              {d.statut === 'transmis' && !priseEnCharge && <Bouton onClick={prendreEnCharge} disabled={envoi}>Prendre en charge</Bouton>}
               <Bouton variante="secondaire" onClick={ouvrirAssureur}>Transmettre à l’assureur</Bouton>
               <Bouton variante="secondaire" onClick={() => { setErreurAction(null); setModaleTemoin(true); }}>Témoignage</Bouton>
-              <Bouton variante="secondaire" onClick={() => setAction('completer')}>Compléter</Bouton>
-              {d.statut !== 'conteste' && <Bouton variante="danger" onClick={() => setAction('contester')}>Contester</Bouton>}
-              {d.statut !== 'valide' && <Bouton variante="succes" onClick={() => setAction('valider')}>Valider</Bouton>}
+              <Bouton variante="secondaire" onClick={() => ouvrirAction('completer')}>Ajouter une remarque</Bouton>
+              {d.statut !== 'conteste' && <Bouton variante="danger" onClick={() => ouvrirAction('contester')}>Contester</Bouton>}
             </>
           )}
         </div>
@@ -296,6 +335,50 @@ export default function PageDossier() {
           {d.agentTraitant.matricule ? ` (matricule ${d.agentTraitant.matricule})` : ''} le {dateHeure(d.dateTraitement)}
           {d.commentaireAgent && <p className="mt-1 whitespace-pre-line">« {d.commentaireAgent} »</p>}
         </div>
+      )}
+
+      {aDecider && (
+        <Carte titre={d.statut === 'valide' ? 'Conclusion manquante : qui a raison ?' : 'Décision de l’autorité : qui a raison ?'} className="border-brand-200 ring-2 ring-brand-100">
+          <div className="space-y-4">
+            <div role="radiogroup" aria-label="Qui a raison ?" className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {CONCLUSIONS.map((c) => {
+                const nom = c.valeur === 'B' ? nomConducteur('A') : c.valeur === 'A' ? nomConducteur('B') : undefined;
+                return (
+                  <label key={c.valeur} className="cursor-pointer">
+                    <input type="radio" name="conclusion" className="peer sr-only" checked={responsabilite === c.valeur} onChange={() => { setResponsabilite(c.valeur); setErreurDecision(null); }} />
+                    <span className={`block h-full rounded-xl border-2 border-zinc-200 p-3 transition hover:border-zinc-300 peer-focus-visible:ring-4 peer-focus-visible:ring-brand-100 ${c.classes}`}>
+                      <span className="block text-sm font-bold">{c.titre}{nom ? ` (${nom})` : ''}</span>
+                      <span className="block text-xs text-zinc-500">{c.detail}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            {responsabilite === 'partagee' && (
+              <div className="rounded-xl bg-zinc-50 p-3">
+                <p className="mb-2 text-xs text-zinc-500">Part de responsabilité de chaque conducteur</p>
+                <div className="mb-2 flex justify-between text-sm font-semibold">
+                  <span className="text-vehA">A : {partA} %</span>
+                  <span className="text-vehB">B : {100 - partA} %</span>
+                </div>
+                <input type="range" min={10} max={90} step={5} value={partA} onChange={(e) => setPartA(Number(e.target.value))} className="w-full accent-brand-600" aria-label="Part de responsabilité du conducteur A" />
+                <div className="mt-2 flex gap-2">
+                  {[25, 50, 75].map((v) => (
+                    <button key={v} type="button" onClick={() => setPartA(v)} className={`rounded-lg px-2 py-1 text-xs font-semibold ${partA === v ? 'bg-brand-600 text-white' : 'bg-white ring-1 ring-zinc-200'}`}>{v}/{100 - v}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <Champ label="Remarques et justification (obligatoire)">
+              <textarea id="justification" className={`${inputCls} min-h-24`} maxLength={2000} placeholder="Éléments du dossier, photos, témoignages, constat sur place…" value={justification} onChange={(e) => setJustification(e.target.value)} />
+            </Champ>
+            {erreurDecision && <Erreur message={erreurDecision} />}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-zinc-500">La conclusion et vos remarques sont visibles des conducteurs et des assureurs, et figurent dans le PDF.</p>
+              <Bouton variante="succes" onClick={valider} disabled={envoi}>{envoi ? '…' : d.statut === 'valide' ? 'Enregistrer la conclusion' : 'Valider le dossier'}</Bouton>
+            </div>
+          </div>
+        </Carte>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
@@ -483,9 +566,12 @@ export default function PageDossier() {
             ) : (
               <ul className="space-y-2 text-sm">
                 {d.transmissionsAssureurs.map((t) => (
-                  <li key={t.id} className="flex justify-between gap-3">
-                    <span className="font-semibold">{t.compagnie}</span>
-                    <span className="text-right text-xs text-zinc-500">{dateHeure(t.date)}{t.transmisPar ? `\npar ${t.transmisPar}` : ''}</span>
+                  <li key={t.id}>
+                    <div className="flex justify-between gap-3">
+                      <span className="font-semibold">{t.compagnie}</span>
+                      <span className="text-right text-xs text-zinc-500">{dateHeure(t.date)}{t.transmisPar ? ` par ${t.transmisPar}` : ''}</span>
+                    </div>
+                    {t.remarque && <p className="mt-1 whitespace-pre-line rounded-lg bg-zinc-50 p-2 text-zinc-700">{t.remarque}</p>}
                   </li>
                 ))}
               </ul>
@@ -511,36 +597,6 @@ export default function PageDossier() {
       <Modale ouvert={action !== null} titre={action ? ACTIONS[action].titre : ''} onFermer={() => !envoi && setAction(null)}>
         {action && (
           <div className="space-y-4">
-            {action === 'valider' && (
-              <>
-                <p className="text-sm text-zinc-600">Qui est responsable de l’accident ?</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {CONCLUSIONS.map((c) => (
-                    <label key={c.valeur} className="cursor-pointer">
-                      <input type="radio" name="conclusion" className="peer sr-only" checked={responsabilite === c.valeur} onChange={() => setResponsabilite(c.valeur)} />
-                      <span className={`block rounded-xl border-2 border-zinc-200 p-3 transition hover:border-zinc-300 ${c.classes}`}>
-                        <span className="block text-sm font-semibold">{c.valeur === 'A' || c.valeur === 'B' ? `${c.titre}${nomConducteur(c.valeur) ? ` (${nomConducteur(c.valeur)})` : ''}` : c.titre}</span>
-                        <span className="block text-xs text-zinc-500">{c.detail}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {responsabilite === 'partagee' && (
-                  <div className="rounded-xl bg-zinc-50 p-3">
-                    <div className="mb-2 flex justify-between text-sm font-semibold">
-                      <span className="text-vehA">A : {partA} %</span>
-                      <span className="text-vehB">B : {100 - partA} %</span>
-                    </div>
-                    <input type="range" min={10} max={90} step={5} value={partA} onChange={(e) => setPartA(Number(e.target.value))} className="w-full accent-brand-600" aria-label="Part de responsabilité du conducteur A" />
-                    <div className="mt-2 flex gap-2">
-                      {[25, 50, 75].map((v) => (
-                        <button key={v} type="button" onClick={() => setPartA(v)} className={`rounded-lg px-2 py-1 text-xs font-semibold ${partA === v ? 'bg-brand-600 text-white' : 'bg-white ring-1 ring-zinc-200'}`}>{v}/{100 - v}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
             <textarea className={`${inputCls} min-h-28`} placeholder={ACTIONS[action].placeholder} value={commentaire} onChange={(e) => setCommentaire(e.target.value)} autoFocus />
             {erreurAction && <Erreur message={erreurAction} />}
             <div className="flex justify-end gap-2">
@@ -586,6 +642,10 @@ export default function PageDossier() {
                   ))}
                 </select>
               </Champ>
+              <Champ label="Remarques pour la compagnie (facultatif)">
+                <textarea className={`${inputCls} min-h-24`} maxLength={2000} value={remarqueAssureur} onChange={(e) => setRemarqueAssureur(e.target.value)} placeholder="Points à signaler avant l’envoi. Seule cette compagnie les verra." />
+              </Champ>
+              {!d.conclusion && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Ce dossier n’a pas encore de conclusion : la compagnie le recevra sans savoir qui a raison.</p>}
             </>
           )}
           {erreurAction && <Erreur message={erreurAction} />}

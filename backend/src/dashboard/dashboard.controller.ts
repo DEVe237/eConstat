@@ -56,6 +56,12 @@ export class DashboardController {
     return new StreamableFile(der, { type: 'application/timestamp-reply', disposition: `attachment; filename="horodatage-${numero.slice(1)}.tsr"` });
   }
 
+  /** L'agent commence à traiter le dossier : le conducteur le voit aussitôt dans l'application. */
+  @Post('dossiers/:id/prendre-en-charge')
+  prendreEnCharge(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequeteAuth) {
+    return this.dashboard.prendreEnCharge(id, req.user);
+  }
+
   @Post('dossiers/:id/valider')
   valider(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ValiderDto, @Req() req: RequeteAuth) {
     return this.dashboard.valider(id, req.user, dto);
@@ -80,7 +86,7 @@ export class DashboardController {
   /** Transmission à une compagnie d'assurance (EF-10). */
   @Post('dossiers/:id/transmettre-assureur')
   transmettreAssureur(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TransmissionAssureurDto, @Req() req: RequeteAuth) {
-    return this.dashboard.transmettreAssureur(id, req.user, dto.compagnie);
+    return this.dashboard.transmettreAssureur(id, req.user, dto.compagnie, dto.remarque);
   }
 
   @Get('assureurs')

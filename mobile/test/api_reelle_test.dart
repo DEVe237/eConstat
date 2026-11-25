@@ -13,10 +13,16 @@ import 'package:camaircost/data/repositories/simulation3d_repository.dart';
 import 'package:camaircost/domain/entities/capture_guidee.dart';
 import 'package:camaircost/domain/entities/constat_draft.dart';
 import 'package:camaircost/domain/entities/vehicule_implique.dart';
+import 'package:camaircost/domain/entities/utilisateur.dart';
+import 'package:camaircost/presentation/state/api_providers.dart';
+import 'package:camaircost/presentation/state/auth_notifier.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _actif = bool.fromEnvironment('API_REELLE');
+/// Facultatif : jeton d'un compte agent, pour suivre en direct le traitement du dossier.
+const _jetonAgent = String.fromEnvironment('JETON_AGENT');
 const _ffmpeg = String.fromEnvironment('FFMPEG', defaultValue: 'ffmpeg');
 
 /// Le stockage sécurisé du téléphone n'existe pas pendant un test.
@@ -40,7 +46,20 @@ class _Memoire implements TokenStorage {
   Future<void> effacer() async => token = user = null;
 }
 
+class _Auth extends AuthNotifier {
+  _Auth(this.user);
+
+  final Utilisateur user;
+
+  @override
+  Future<Utilisateur?> build() async => user;
+}
+
 void main() {
+  // Le suivi en direct regarde si l'application est au premier plan.
+  TestWidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = null;
+
   test('le code mobile dialogue avec la vraie API', () async {
     final dir = Directory.systemTemp.createTempSync('econstat');
     addTearDown(() => dir.deleteSync(recursive: true));
@@ -147,6 +166,10 @@ void main() {
     final premiere = (detail['medias'] as List).firstWhere((m) => m['type'] == 'photo');
     expect((await Dio().get<List<int>>('${api.dio.options.baseUrl}${premiere['url']}', options: Options(responseType: ResponseType.bytes))).statusCode, 200);
 
+    final suivi = await dossiers.suivi(id);
+    expect((suivi['statut'], suivi['enTraitement']), ('transmis', false));
+    expect([for (final e in suivi['etapes'] as List) (e as Map)['type']], ['creation', 'transmission']);
+
     // Reconstitution 3D : la page que la WebView ouvre et les données qu'elle charge.
     final generation = await sim.declencherGeneration(id);
     expect(generation.sceneUrl, isNotNull);
@@ -158,6 +181,42 @@ void main() {
     final scene = await nu.get<Map<String, dynamic>>('$base/dossiers/$id/simulation3d/scene', queryParameters: {'exp': q['exp'], 'sig': q['sig']});
     expect(scene.data!['vehicules'], hasLength(2));
     expect(scene.data!['meteo'], 'meteo_pluie');
+
+    // Suivi en direct : l'agent traite, l'application observe sans rien recharger elle-même.
+    if (_jetonAgent.isNotEmpty) {
+      final agent = Dio(BaseOptions(baseUrl: base, headers: {'Authorization': 'Bearer $_jetonAgent'}));
+      final boite = ProviderContainer(overrides: [
+        tokenStorageProvider.overrideWithValue(stockage),
+        authNotifierProvider.overrideWith(() => _Auth(reconnecte)),
+      ]);
+      addTearDown(boite.dispose);
+      Map<String, dynamic>? vu;
+      boite.listen(suiviProvider(id), (_, s) => vu = s.value);
+      Future<void> voir(String quoi, bool Function(Map<String, dynamic> s) ok) async {
+        final chrono = Stopwatch()..start();
+        while (vu == null || !ok(vu!)) {
+          if (chrono.elapsed > const Duration(seconds: 40)) fail('jamais vu en direct : $quoi (dernier état : $vu)');
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        // ignore: avoid_print
+        print('EN DIRECT $quoi : ${chrono.elapsedMilliseconds} ms');
+      }
+
+      bool etape(Map<String, dynamic> s, String type) => (s['etapes'] as List).any((e) => (e as Map)['type'] == type);
+      await voir('transmis', (s) => s['statut'] == 'transmis' && s['enTraitement'] == false);
+      await agent.post('/dashboard/dossiers/$id/prendre-en-charge');
+      await voir('pris en charge', (s) => s['enTraitement'] == true);
+      expect((await dossiers.listerDossiers()).first['enTraitement'], isTrue);
+      await agent.post('/dashboard/dossiers/$id/completer', data: {'commentaire': 'Note interne secrète'});
+      await voir('remarque', (s) => etape(s, 'complement'));
+      expect('$vu', isNot(contains('secrète')));
+      await agent.post('/dashboard/dossiers/$id/contester', data: {'commentaire': 'Photo illisible'});
+      await voir('contesté', (s) => s['statut'] == 'conteste');
+      await agent.post('/dashboard/dossiers/$id/valider', data: {'responsabilite': 'B', 'commentaire': 'B a grillé le stop'});
+      await voir('validé', (s) => s['statut'] == 'valide' && etape(s, 'validation'));
+      final final_ = await dossiers.detail(id);
+      expect((final_['responsabilite'], final_['commentaireAgent']), ('B', 'B a grillé le stop'));
+    }
 
     // ignore: avoid_print
     print('DOSSIER=$id');

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import type { JwtPayload } from '../auth/jwt.strategy';
 import { HorodatageService } from '../common/horodatage.service';
 import { LiensSignesService } from '../common/liens-signes.service';
@@ -56,12 +56,37 @@ export class DossiersService {
   }
 
   /** Historique du conducteur : uniquement ses propres dossiers. */
-  findAll(user: JwtPayload): Promise<DossierConstat[]> {
-    return this.dossiersRepo.find({
+  async findAll(user: JwtPayload): Promise<(DossierConstat & { enTraitement: boolean })[]> {
+    const dossiers = await this.dossiersRepo.find({
       where: { proprietaireId: user.sub },
       order: { dateCreation: 'DESC', vehiculesImpliques: { dateAjout: 'ASC' } },
       relations: ['vehiculesImpliques'],
     });
+    const transmis = dossiers.filter((d) => d.statut === 'transmis').map((d) => d.id);
+    const pris = transmis.length ? await this.evenementsRepo.findBy({ dossierId: In(transmis), type: 'prise_en_charge' }) : [];
+    const enCours = new Set(pris.map((e) => e.dossierId));
+    return dossiers.map((d) => ({ ...d, enTraitement: enCours.has(d.id) }));
+  }
+
+  /**
+   * Étapes du traitement vues par le conducteur. Le texte des remarques internes,
+   * les témoignages et le nom de l'assureur restent réservés aux autorités ;
+   * seuls la conclusion et le motif de contestation lui sont destinés.
+   */
+  async suivi(id: string, user: JwtPayload) {
+    const dossier = await this.dossiersRepo.findOneBy({ id });
+    if (!dossier || !DossiersService.peutLire(dossier, user)) throw new NotFoundException(`Dossier ${id} introuvable`);
+    const evenements = await this.evenementsRepo.find({ where: { dossierId: id }, order: { date: 'ASC' } });
+    return {
+      statut: dossier.statut,
+      enTraitement: dossier.statut === 'transmis' && evenements.some((e) => e.type === 'prise_en_charge'),
+      etapes: evenements.map((e) => ({
+        id: e.id,
+        type: e.type,
+        date: e.date,
+        commentaire: e.type === 'validation' || e.type === 'contestation' ? e.commentaire : null,
+      })),
+    };
   }
 
   async findOne(id: string, user: JwtPayload): Promise<DossierConstat> {

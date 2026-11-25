@@ -32,6 +32,7 @@ Future<void> _afficher(
   Utilisateur? user = _nouveau,
   Future<List<Map<String, dynamic>>> Function()? dossiers,
   Map<String, dynamic> detail = const {},
+  Stream<Map<String, dynamic>>? suivi,
 }) async {
   tester.view.physicalSize = const Size(1200, 4000);
   tester.view.devicePixelRatio = 2;
@@ -42,6 +43,7 @@ Future<void> _afficher(
         authNotifierProvider.overrideWith(() => _Auth(user)),
         historiqueProvider.overrideWith((ref) => dossiers?.call() ?? Future.value(const [])),
         dossierDetailProvider.overrideWith((ref, id) async => detail),
+        suiviProvider.overrideWith((ref, id) => suivi ?? const Stream.empty()),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
@@ -129,6 +131,33 @@ void main() {
     expect(find.text('Fournie'), findsOneWidget);
     expect(find.text('Non détenue'), findsOneWidget);
     expect(find.text('36 s'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('détail : le traitement se suit en direct', (tester) async {
+    final direct = StreamController<Map<String, dynamic>>();
+    addTearDown(direct.close);
+    Map<String, dynamic> etape(String type) => {'id': type, 'type': type, 'date': '2026-11-25T08:00:00.000Z'};
+    await _afficher(tester, const DossierDetailScreen(args: args), detail: const {'statut': 'transmis'}, suivi: direct.stream);
+
+    direct.add({'statut': 'transmis', 'enTraitement': false, 'etapes': [etape('transmission')]});
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('En attente de prise en charge'), findsOneWidget);
+    expect(find.text('Transmis'), findsOneWidget);
+
+    direct.add({'statut': 'transmis', 'enTraitement': true, 'etapes': [etape('transmission'), etape('prise_en_charge')]});
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('En traitement'), findsOneWidget);
+    expect(find.text('En attente de la décision finale'), findsOneWidget);
+    expect(find.text('Dossier mis à jour : Pris en charge par un agent'), findsOneWidget);
+
+    direct.add({'statut': 'valide', 'enTraitement': false, 'etapes': [etape('transmission'), etape('prise_en_charge'), etape('validation')]});
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Constat validé'), findsOneWidget);
+    expect(find.text('En attente de la décision finale'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

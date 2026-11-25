@@ -13,9 +13,10 @@ const LIBELLE_STATUT: Record<string, string> = { transmis: 'Transmis — en atte
 const LIBELLE_EVT: Record<string, string> = {
   creation: 'Création',
   transmission: 'Transmission aux autorités',
+  prise_en_charge: 'Prise en charge',
   validation: 'Validation',
   contestation: 'Contestation',
-  complement: 'Complément',
+  complement: 'Remarque',
   temoignage: 'Témoignage recueilli',
   envoi_assureur: "Transmission à l'assureur",
 };
@@ -142,7 +143,7 @@ export class ExportPdfService {
           <p style="margin:6px 0 0;white-space:pre-line">${esc(t.recit)}</p></div>`,
       )
       .join('');
-    const assureurs = d.transmissionsAssureurs.map((t) => `${esc(t.compagnie)} (le ${dt(t.date)})`).join(', ');
+    const assureurs = d.transmissionsAssureurs.map((t) => `${esc(t.compagnie)} (le ${dt(t.date)})${t.remarque ? `<div class="muted" style="white-space:pre-line">Remarque : ${esc(t.remarque)}</div>` : ''}`).join('<br>');
     const sim = d.simulations3d[0];
     const evenements = d.evenements
       .map((e) => `<tr><td>${dt(e.date)}</td><td>${esc(LIBELLE_EVT[e.type] ?? e.type)}</td><td>${esc(e.auteurNom)}</td><td>${esc(e.commentaire)}</td></tr>`)

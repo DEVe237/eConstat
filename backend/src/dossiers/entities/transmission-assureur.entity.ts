@@ -25,6 +25,10 @@ export class TransmissionAssureur {
   @Column({ type: 'varchar', length: 170, nullable: true })
   transmisPar: string | null;
 
+  /** Remarque de l'agent à l'attention de cette compagnie (les autres ne la voient pas). */
+  @Column({ type: 'text', nullable: true })
+  remarque: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   date: Date;
 }

@@ -123,6 +123,11 @@ export class DashboardService {
     if (compagnie !== null && !dossier.transmissionsAssureurs.some((t) => t.compagnie === compagnie)) {
       throw new NotFoundException(`Dossier ${id} introuvable`);
     }
+    if (compagnie !== null) {
+      // Une compagnie ne voit que la transmission qui la concerne, remarque comprise.
+      dossier.transmissionsAssureurs = dossier.transmissionsAssureurs.filter((t) => t.compagnie === compagnie);
+      dossier.evenements = dossier.evenements.filter((e) => e.type !== 'envoi_assureur' || e.commentaire === `Transmis à ${compagnie}`);
+    }
     dossier.temoignages.sort((a, b) => a.date.getTime() - b.date.getTime());
     dossier.transmissionsAssureurs.sort((a, b) => a.date.getTime() - b.date.getTime());
     dossier.evenements.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -162,8 +167,20 @@ export class DashboardService {
     return { der: Buffer.from(d.horodatageJeton, 'base64'), numero: d.numero };
   }
 
+  async prendreEnCharge(id: string, agent: JwtPayload) {
+    await this.debuterTraitement(await this.getTransmisOrFail(id), agent);
+    return this.detail(id, agent);
+  }
+
+  /** Première action d'une autorité sur un dossier reçu ; sans effet ensuite. */
+  private async debuterTraitement(dossier: DossierConstat, agent: JwtPayload) {
+    if (dossier.statut !== 'transmis') return;
+    if (await this.evenementsRepo.existsBy({ dossierId: dossier.id, type: 'prise_en_charge' })) return;
+    await this.journaliser(dossier.id, 'prise_en_charge', agent, null);
+  }
+
   async ajouterTemoignage(id: string, agent: JwtPayload, data: { temoinNom: string; temoinTelephone?: string; recit: string }) {
-    await this.getTransmisOrFail(id);
+    await this.debuterTraitement(await this.getTransmisOrFail(id), agent);
     const auteur = await this.nomAuteur(agent);
     await this.temoignagesRepo.save(
       this.temoignagesRepo.create({ dossierId: id, temoinNom: data.temoinNom.trim(), temoinTelephone: data.temoinTelephone?.trim() || null, recit: data.recit.trim(), recueilliPar: auteur }),
@@ -177,15 +194,16 @@ export class DashboardService {
   }
 
   /** Rend le dossier consultable par les comptes de la compagnie d'assurance choisie. */
-  async transmettreAssureur(id: string, agent: JwtPayload, compagnie: string) {
-    await this.getTransmisOrFail(id);
+  async transmettreAssureur(id: string, agent: JwtPayload, compagnie: string, remarque?: string) {
+    const dossier = await this.getTransmisOrFail(id);
     if (!(await this.usersService.compagnies()).includes(compagnie)) {
       throw new BadRequestException('Compagnie inconnue : créez d’abord un compte assureur pour elle');
     }
     if (await this.transmissionsRepo.findOne({ where: { dossierId: id, compagnie } })) {
       throw new BadRequestException(`Dossier déjà transmis à ${compagnie}`);
     }
-    await this.transmissionsRepo.save(this.transmissionsRepo.create({ dossierId: id, compagnie, transmisPar: await this.nomAuteur(agent) }));
+    await this.debuterTraitement(dossier, agent);
+    await this.transmissionsRepo.save(this.transmissionsRepo.create({ dossierId: id, compagnie, transmisPar: await this.nomAuteur(agent), remarque: remarque?.trim() || null }));
     await this.journaliser(id, 'envoi_assureur', agent, `Transmis à ${compagnie}`);
     return this.detail(id, agent);
   }
@@ -208,7 +226,7 @@ export class DashboardService {
 
   /** Complément d'information : ajoute une note à l'historique sans changer le statut. */
   async completer(id: string, agent: JwtPayload, commentaire: string) {
-    await this.getTransmisOrFail(id);
+    await this.debuterTraitement(await this.getTransmisOrFail(id), agent);
     await this.journaliser(id, 'complement', agent, commentaire);
     return this.detail(id, agent);
   }
@@ -222,9 +240,12 @@ export class DashboardService {
     conclusion?: { responsabilite: Responsabilite; part: number | null },
   ) {
     const dossier = await this.getTransmisOrFail(id);
-    if (dossier.statut === statut) {
+    // Un dossier validé avant l'ajout des conclusions peut encore recevoir la sienne.
+    const sansConclusion = statut === 'valide' && !dossier.responsabilite;
+    if (dossier.statut === statut && !sansConclusion) {
       throw new BadRequestException(`Le dossier est déjà ${statut === 'valide' ? 'validé' : 'contesté'}`);
     }
+    await this.debuterTraitement(dossier, agent);
     dossier.statut = statut;
     dossier.agentTraitantId = agent.sub;
     dossier.dateTraitement = new Date();
@@ -241,9 +262,9 @@ export class DashboardService {
   static libelleConclusion(r: Responsabilite | null, partA: number | null): string {
     switch (r) {
       case 'A':
-        return 'conducteur A responsable (100 % / 0 %)';
+        return 'conducteur A responsable (100 % / 0 %), le conducteur B a raison';
       case 'B':
-        return 'conducteur B responsable (0 % / 100 %)';
+        return 'conducteur B responsable (0 % / 100 %), le conducteur A a raison';
       case 'partagee':
         return `responsabilité partagée (A ${partA} % / B ${100 - (partA ?? 0)} %)`;
       case 'indeterminee':

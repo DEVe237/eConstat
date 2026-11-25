@@ -11,6 +11,7 @@ import { DossierConstat } from './dossier-constat.entity';
 export type TypeEvenement =
   | 'creation'
   | 'transmission'
+  | 'prise_en_charge'
   | 'validation'
   | 'contestation'
   | 'complement'

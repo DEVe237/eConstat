@@ -13,7 +13,7 @@ const ENV = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
 const envv = (k) => ENV.match(new RegExp(`^${k}=(.*)$`, 'm'))[1].trim();
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 // Attend qu'une condition soit vraie dans la page (au lieu d'un délai fixe).
-const attendre = (page, fn, arg) => page.waitForFunction(fn, { timeout: 20000 }, arg).then(() => true).catch(() => false);
+const attendre = (page, fn, arg) => page.waitForFunction(fn, { timeout: 45000 }, arg).then(() => true).catch(() => false);
 let ok = 0, ko = 0;
 const check = (c, m) => { c ? ok++ : ko++; console.log(`${c ? 'OK  ' : 'FAIL'} ${m}`); };
 
@@ -69,6 +69,7 @@ const cliquerTexte = async (page, texte) => {
   const nouvellePage = async () => {
     const p = await (await b.createBrowserContext()).newPage();
     await p.setViewport({ width: 1440, height: 900 });
+    p.setDefaultNavigationTimeout(90000);
     p.on('pageerror', (e) => erreurs.push(e.message));
     p.on('console', (m) => m.type() === 'error' && erreurs.push(m.text()));
     return p;
@@ -80,14 +81,23 @@ const cliquerTexte = async (page, texte) => {
   check(p.url().endsWith('/dossiers'), 'agent connecté → liste des dossiers');
   const stockage = await p.evaluate(() => JSON.stringify(localStorage) + document.cookie);
   check(!/eyJ/.test(stockage), 'aucun jeton accessible au JavaScript (cookie httpOnly)');
-  await pause(1500);
-  check(await p.evaluate(() => /\d+/.test([...document.querySelectorAll('aside a')][0]?.textContent ?? '')), 'badge « dossiers à traiter » dans le menu');
+  check(await attendre(p, () => /\d+/.test([...document.querySelectorAll('aside a')][0]?.textContent ?? '')), 'badge « dossiers à traiter » dans le menu');
   await p.goto(`${WEB}/dossiers/${d.id}`, { waitUntil: 'networkidle0' });
   await pause(3000);
   const scene = await p.evaluate(() => document.querySelector('iframe')?.getAttribute('src') ?? '');
   check(scene.startsWith('/api/simulation3d/scene.html') && scene.includes('sig='), 'visionneuse 3D chargée par lien signé');
   const sceneOk = await p.frames().find((f) => f.url().includes('scene.html'))?.evaluate(() => window.__sceneReady === true && !document.getElementById('erreur').textContent);
   check(sceneOk, 'scène 3D affichée sans erreur dans l’iframe');
+  // Rendu 3D logiciel : une fois vérifié, il ne doit pas saturer le processeur pour la suite.
+  const sansScene = async (page) => {
+    await page.setRequestInterception(true);
+    page.on('request', (r) => (r.url().includes('scene.html') ? r.respond({ contentType: 'text/html', body: '' }) : r.continue()));
+    await page.evaluate(() => document.querySelectorAll('iframe').forEach((f) => (f.src = 'about:blank')));
+  };
+  await sansScene(p);
+
+  await cliquerTexte(p, 'Prendre en charge');
+  check(await attendre(p, () => document.body.innerText.includes('En traitement par Paul Essomba')), 'prise en charge depuis l’interface');
 
   await cliquerTexte(p, 'Témoignage');
   await p.waitForSelector('[role=dialog] textarea');
@@ -101,18 +111,20 @@ const cliquerTexte = async (page, texte) => {
   await cliquerTexte(p, 'Transmettre à l’assureur');
   await p.waitForSelector('[role=dialog] select');
   await p.select('[role=dialog] select', compagnie);
+  check(await p.evaluate(() => document.querySelector('[role=dialog]').innerText.includes('pas encore de conclusion')), 'transfert sans conclusion : avertissement');
+  await p.type('[role=dialog] textarea', 'Vérifier les freins du véhicule B.');
   await cliquerTexte(p, 'Transmettre');
-  check(await attendre(p, (c) => !document.querySelector('[role=dialog]') && document.body.innerText.includes(c), compagnie), 'dossier transmis à l’assureur depuis l’interface');
+  check(await attendre(p, (c) => !document.querySelector('[role=dialog]') && document.body.innerText.includes(c) && document.body.innerText.includes('Vérifier les freins du véhicule B.'), compagnie), 'dossier transmis à l’assureur avec une remarque');
 
-  await cliquerTexte(p, 'Valider');
-  await p.waitForSelector('[role=dialog] textarea');
-  await p.type('[role=dialog] textarea', 'Déclarations et témoignage concordants.');
-  const valider = () => p.evaluate(() => [...document.querySelectorAll('[role=dialog] button')].find((x) => x.textContent.trim() === 'Valider avec cette conclusion').click());
-  await valider();
-  check(await attendre(p, () => document.querySelector('[role=dialog]')?.innerText.includes('Choisissez une conclusion')), 'conclusion obligatoire pour valider');
-  await p.evaluate(() => [...document.querySelectorAll('[role=dialog] label')].find((x) => x.textContent.includes('Conducteur B responsable')).click());
-  await valider();
-  check(await attendre(p, () => document.body.innerText.includes('Validé par Paul Essomba') && document.body.innerText.includes('Conclusion : conducteur B responsable')), 'validation avec conclusion depuis l’interface');
+  if (process.env.CAPTURE) await p.screenshot({ path: process.env.CAPTURE });
+  await cliquerTexte(p, 'Valider le dossier');
+  check(await attendre(p, () => document.body.innerText.includes('Indiquez qui a raison')), 'conclusion obligatoire pour valider');
+  await p.evaluate(() => [...document.querySelectorAll('[role=radiogroup] label')].find((x) => x.textContent.includes('A a raison (Eric Kamga)')).click());
+  await cliquerTexte(p, 'Valider le dossier');
+  check(await attendre(p, () => document.body.innerText.includes('remarques justifiant la conclusion sont obligatoires')), 'remarques obligatoires pour valider');
+  await p.type('#justification', 'Déclarations et témoignage concordants.');
+  await cliquerTexte(p, 'Valider le dossier');
+  check(await attendre(p, () => document.body.innerText.includes('Validé par Paul Essomba') && document.body.innerText.includes('Conclusion : conducteur B responsable (0 % / 100 %), le conducteur A a raison') && !document.querySelector('[role=radiogroup]')), 'validation avec conclusion depuis l’interface');
   check(await p.evaluate(() => document.body.innerText.includes('Pièces justificatives')), 'pièces justificatives affichées');
   check(await p.evaluate(() => document.body.innerText.includes('Horodatage certifié le')), 'horodatage certifié affiché');
 
@@ -124,10 +136,12 @@ const cliquerTexte = async (page, texte) => {
   await connexion(q, `ui.assur.${stamp}@test.local`, `Assur-${stamp}`);
   check(await attendre(q, (id) => !!document.querySelector(`a[href="/dossiers/${id}"]`), d.id), 'assureur : le dossier transmis apparaît');
   check(await q.evaluate(() => ![...document.querySelectorAll('aside a')].some((a) => /Statistiques|Comptes/.test(a.textContent))), 'assureur : pas de statistiques ni de comptes dans le menu');
+  await sansScene(q);
   await q.goto(`${WEB}/dossiers/${d.id}`, { waitUntil: 'networkidle0' });
   await attendre(q, () => [...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'Exporter en PDF'));
   const boutons = await q.evaluate(() => [...document.querySelectorAll('button')].map((x) => x.textContent.trim()));
-  check(boutons.includes('Exporter en PDF') && !boutons.includes('Valider') && !boutons.includes('Contester') && !boutons.includes('Témoignage'), 'assureur : lecture seule (export uniquement)');
+  check(boutons.includes('Exporter en PDF') && !boutons.includes('Valider le dossier') && !boutons.includes('Contester') && !boutons.includes('Témoignage'), 'assureur : lecture seule (export uniquement)');
+  check(await q.evaluate(() => document.body.innerText.includes('Vérifier les freins du véhicule B.') && document.body.innerText.includes('le conducteur A a raison')), 'assureur : remarque et conclusion visibles');
   await q.goto(`${WEB}/statistiques`, { waitUntil: 'networkidle0' });
   await pause(1000);
   check(q.url().endsWith('/dossiers'), 'assureur : /statistiques redirige vers ses dossiers');

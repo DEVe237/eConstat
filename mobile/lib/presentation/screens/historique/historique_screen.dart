@@ -21,6 +21,8 @@ class HistoriqueScreen extends ConsumerWidget {
         child: RefreshIndicator(
           onRefresh: () => ref.refresh(historiqueProvider.future),
           child: dossiersAsync.when(
+            // Une relecture automatique ratée garde la liste affichée.
+            skipError: true,
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (_, _) => _EtatVide(
               icon: Icons.cloud_off_outlined,
@@ -39,6 +41,7 @@ class HistoriqueScreen extends ConsumerWidget {
               final items = dossiers
                   .map((d) {
                     final statut = d['statut'] as String? ?? 'brouillon';
+                    final etiquette = etiquetteStatut(statut, d['enTraitement'] == true);
                     final vehicules = (d['vehiculesImpliques'] as List?) ?? [];
                     final premierePlaque = vehicules.isNotEmpty
                         ? (vehicules.first as Map)['plaque'] as String? ?? '—'
@@ -54,20 +57,8 @@ class HistoriqueScreen extends ConsumerWidget {
                       titre:
                           '${t('dossier_numero')} ${(d['id'] as String).substring(0, 8).toUpperCase()}',
                       date: dateAffichee,
-                      statut: statut == 'transmis'
-                          ? t('historique_transmis')
-                          : (statut == 'valide'
-                                ? t('historique_valide')
-                                : (statut == 'conteste'
-                                      ? t('historique_conteste')
-                                      : t('historique_en_cours'))),
-                      statutColor: statut == 'transmis'
-                          ? const Color(0xFF6B7280)
-                          : (statut == 'valide'
-                                ? const Color(0xFF1E79E8)
-                                : (statut == 'conteste'
-                                      ? const Color(0xFFB60B0B)
-                                      : const Color(0xFFE07200))),
+                      statut: t(etiquette.$1),
+                      statutColor: etiquette.$2,
                       plaque: premierePlaque,
                     );
                   })
